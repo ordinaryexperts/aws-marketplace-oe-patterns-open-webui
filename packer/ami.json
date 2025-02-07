@@ -1,0 +1,40 @@
+{
+  "variables": {
+    "aws_access_key": "{{env `AWS_ACCESS_KEY`}}",
+    "aws_secret_key": "{{env `AWS_SECRET_KEY`}}",
+    "version": "{{env `VERSION`}}",
+    "ami_name": "Deep Learning AMI Neuron (Ubuntu 22.04) - Supported EC2 instances: Inf1, Trn1, Trn1n, Inf2, Trn2."
+  },
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "us-east-1",
+      "source_ami": "ami-0349dc82277d50797",
+      "instance_type": "inf2.xlarge",
+      "ssh_username": "ubuntu",
+      "ami_name": "ordinary-experts-patterns-openwebui-{{user `version`}}-{{isotime \"20060102-0304\"}}",
+      "launch_block_device_mappings": [{
+        "device_name": "/dev/sda1",
+        "volume_type": "gp3",
+        "volume_size": 500,
+        "delete_on_termination": true
+      }]
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "execute_command": "{{.Vars}} sudo -H -S -E bash '{{.Path}}'",
+      "script": "./packer/ubuntu_2204_appinstall.sh"
+    }
+  ],
+  "post-processors": [
+    [
+      {
+        "output": "manifest.json",
+        "strip_path": true,
+        "type": "manifest"
+      }
+    ]
+  ]
+}
