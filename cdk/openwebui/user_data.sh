@@ -8,6 +8,7 @@ systemctl start amazon-cloudwatch-agent
 
 mkdir -p /opt/oe/patterns
 
+
 # nginx
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
   -keyout /etc/ssl/private/nginx-selfsigned.key \
@@ -34,20 +35,9 @@ server {
         add_header Content-Type text/plain;
     }
 
-    # Proxy to 127.0.0.1:1337
-    location ~ ^/(api|socket\.io) {
-        proxy_pass http://127.0.0.1:1337;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-
-    # Proxy to 127.0.0.1:3000
+    # Proxy to 127.0.0.1:8080
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -59,22 +49,83 @@ server {
 EOF
 
 rm /etc/nginx/sites-enabled/default
-ln -s /etc/nginx/sites-available/devika /etc/nginx/sites-enabled/devika
+ln -s /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui
 service nginx stop
 service nginx enable
 service nginx start
 
-# TODO: move to AMI
-# apt-get update
-# apt-get install -y software-properties-common
-# add-apt-repository -y ppa:deadsnakes/ppa
-# apt-get update
-# apt-get install -y python3.11 libsqlite3-dev
-# python3.11 -m pip install --upgrade pip
-# python3.11 -m pip install open-webui
+mkdir /data
+chown app:app /data
+cat <<EOF > /home/app/start-openwebui.sh
+#!/bin/bash
+source /home/app/.bashrc
+export DATA_DIR=/data
+export WEBUI_SECRET_KEY=assdfsdlfksjdfkldkjfsldkfjslfkajdsflskf
+/home/app/.pyenv/shims/open-webui serve
+EOF
+chown app:app /home/app/start-openwebui.sh
+chmod 700 /home/app/start-openwebui.sh
 
-wget https://localhost --no-check-certificate
-echo 'test'
+cat <<EOF > /etc/systemd/system/open-webui.service
+[Unit]
+Description=Open WebUI
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/app/start-openwebui.sh
+KillSignal=SIGTERM
+KillMode=mixed
+Restart=always
+RestartSec=3
+StandardError=syslog
+User=app
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable open-webui.service
+systemctl start open-webui.service
+echo hi
 success=$?
-rm -f index.html
+
+# give open-webui 2 minutes to come up
+sleep 120
+
+# preload deepseek-r1:1.5b
+time curl http://localhost:11434/api/generate -d '{"model": "deepseek-r1:1.5b", "keep_alive": -1}'
+
+HOST_ENTRY="${Hostname}"
+# this is needed if service isn't publicly available
+if ! grep -q "127.0.0.1.*$HOST_ENTRY" /etc/hosts; then
+    sed -i "/127.0.0.1/s/$/ $HOST_ENTRY/" /etc/hosts
+fi
+
+URL="https://${Hostname}"
+TIMEOUT=15
+MAX_RETRIES=20
+
+# Only attempt wget if the service start was successful
+if [ $success -eq 0 ]; then
+    for ((i=1; i<=MAX_RETRIES; i++)); do
+        wget --no-check-certificate --timeout=$TIMEOUT --tries=1 --spider "$URL" >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo "Successfully reached $URL"
+            success=0  # Indicate success
+            break
+        fi
+        echo "Attempt $i/$MAX_RETRIES to reach $URL failed...retrying in $TIMEOUT seconds..."
+        sleep $TIMEOUT
+    done
+
+    if [ $i -gt $MAX_RETRIES ]; then
+        echo "Failed to reach $URL after $MAX_RETRIES attempts."
+        success=1  # Indicate failure
+    fi
+else
+    echo "Service failed to start. Skipping URL checks."
+    success=1  # Indicate failure
+fi
+
 cfn-signal --exit-code $success --stack ${AWS::StackName} --resource Asg --region ${AWS::Region}

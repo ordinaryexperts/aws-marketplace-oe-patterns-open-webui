@@ -21,10 +21,10 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-03fee04c541069dcf"
-AMI_NAME="ordinary-experts-patterns-devika--20250205-0913"
+AMI_ID="ami-0077611e201e19f5f"
+AMI_NAME="ordinary-experts-patterns-openwebui-21fd255-20250208-0559"
 generated_ami_ids = {
-    "us-east-1": "ami-03fee04c541069dcf"
+    "us-east-1": "ami-0077611e201e19f5f"
 }
 # End generated code block.
 
@@ -41,14 +41,24 @@ class OpenwebuiStack(Stack):
 
         dns = Dns(self, "Dns")
 
-
         with open("openwebui/user_data.sh") as f:
             user_data = f.read()
         asg = Asg(
             self,
             "Asg",
-            allowed_instance_types = ["g5g.xlarge"],
-            default_instance_type = "g5g.xlarge",
+            allowed_instance_types = [
+                "g6e.xlarge",
+                "g6e.2xlarge",
+                "g6e.4xlarge",
+                "g6e.8xlarge",
+                "g6e.16xlarge",
+                "g6e.12xlarge",
+                "g6e.24xlarge",
+                "g6e.48xlarge"
+            ],
+            default_instance_type = "g6e.xlarge",
+            singleton = True,
+            use_data_volume = True,
             user_data_contents = user_data,
             user_data_variables={
                 "Hostname": dns.hostname(),
