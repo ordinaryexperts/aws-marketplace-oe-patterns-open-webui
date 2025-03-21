@@ -107,6 +107,18 @@ cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
             "log_group_name": "ASG_APP_LOG_GROUP_PLACEHOLDER",
             "log_stream_name": "{instance_id}-/var/log/nginx/error.log",
             "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/open-webui.log",
+            "log_group_name": "ASG_APP_LOG_GROUP_PLACEHOLDER",
+            "log_stream_name": "{instance_id}-/var/log/open-webui.log",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/vllm.log",
+            "log_group_name": "ASG_APP_LOG_GROUP_PLACEHOLDER",
+            "log_stream_name": "{instance_id}-/var/log/vllm.log",
+            "timezone": "UTC"
           }
         ]
       }
@@ -116,67 +128,55 @@ cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 }
 EOF
 
-# Start setup
-CUDA_HOME=/usr/local/cuda
-HOME_DIR=/home/ubuntu
-
 # rust
 apt-get install -y rustc cargo
 
 # NVIDIA drivers
-wget https://us.download.nvidia.com/tesla/550.54.15/nvidia-driver-local-repo-ubuntu2204-550.54.15_1.0-1_arm64.deb
-dpkg -i nvidia-driver-local-repo-ubuntu2204-550.54.15_1.0-1_arm64.deb
+wget https://us.download.nvidia.com/tesla/550.54.15/nvidia-driver-local-repo-ubuntu2204-550.54.15_1.0-1_amd64.deb
+dpkg -i nvidia-driver-local-repo-ubuntu2204-550.54.15_1.0-1_amd64.deb
 cp /var/nvidia-driver-local-repo-ubuntu2204-550.54.15/nvidia-driver-local-*-keyring.gpg /usr/share/keyrings/
+apt-get install -y nvtop
 
 # CUDA
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/sbsa/cuda-ubuntu2204.pin
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
 mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
-wget https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda-repo-ubuntu2204-12-4-local_12.4.1-550.54.15-1_arm64.deb
-dpkg -i cuda-repo-ubuntu2204-12-4-local_12.4.1-550.54.15-1_arm64.deb
-cp /var/cuda-repo-ubuntu2204-12-4-local/cuda-*-keyring.gpg /usr/share/keyrings/
+wget https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda-repo-ubuntu2204-12-8-local_12.8.1-570.124.06-1_amd64.deb
+dpkg -i cuda-repo-ubuntu2204-12-8-local_12.8.1-570.124.06-1_amd64.deb
+cp /var/cuda-repo-ubuntu2204-12-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
 apt-get update
-apt-get -y install cuda-toolkit-12-4
+apt-get -y install cuda-toolkit-12-8
 apt-get install -y nvidia-driver-550-open
 apt-get install -y cuda-drivers-550
 
-CUDNN_VERSION=9.1.0.70
-wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-sbsa/cudnn-linux-sbsa-${CUDNN_VERSION}_cuda12-archive.tar.xz
-tar -xf cudnn-linux-sbsa-${CUDNN_VERSION}_cuda12-archive.tar.xz
-cp -P cudnn-linux-sbsa-${CUDNN_VERSION}_cuda12-archive/include/* $CUDA_HOME/include/
-cp -P cudnn-linux-sbsa-${CUDNN_VERSION}_cuda12-archive/lib/* $CUDA_HOME/lib64/
-chmod a+r $CUDA_HOME/lib64/*
-
-# Ollama
-curl -L https://ollama.com/install.sh | sh
-sleep 120 # give ollama a chance to come up...
-OLLAMA_HOST="127.0.0.1:11434" ollama pull deepseek-r1:1.5b
-OLLAMA_HOST="127.0.0.1:11434" ollama pull deepseek-r1:70b
-
-# nginx
-apt-get install -y nginx
-
-# open-webui
-groupadd -g 2000 app
-useradd --create-home -c "Open WebUI User" -u 2000 -g app -s /bin/bash app
-
+# cuDNN
+wget https://developer.download.nvidia.com/compute/cudnn/9.8.0/local_installers/cudnn-local-repo-ubuntu2204-9.8.0_1.0-1_amd64.deb
+dpkg -i cudnn-local-repo-ubuntu2204-9.8.0_1.0-1_amd64.deb
+cp /var/cudnn-local-repo-ubuntu2204-9.8.0/cudnn-*-keyring.gpg /usr/share/keyrings/
 apt-get update
-apt-get install -y build-essential libssl-dev zlib1g-dev \
+apt-get -y install cudnn cudnn-cuda-12
+
+# conda
+mkdir -p /root/miniconda3
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /root/miniconda3/miniconda.sh
+bash /root/miniconda3/miniconda.sh -b -u -p /root/miniconda3
+rm /root/miniconda3/miniconda.sh
+source /root/miniconda3/bin/activate
+conda init --all
+conda create -n open-webui python=3.11 -y
+conda activate open-webui
+pip install flashinfer-python
+pip install vllm
+
+# open-webui deps
+apt-get -y install build-essential libssl-dev zlib1g-dev \
         libbz2-dev libreadline-dev libsqlite3-dev curl git \
         libncursesw5-dev xz-utils tk-dev libxml2-dev \
         libxmlsec1-dev libffi-dev liblzma-dev ffmpeg
-curl https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer > /tmp/pyenv-installer
-su - app -c "bash /tmp/pyenv-installer"
 
-echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/app/.bashrc
-echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/app/.bashrc
-echo 'eval "$(pyenv init - bash)"' >> /home/app/.bashrc
+pip install open-webui
 
-echo 'export PYENV_ROOT="$HOME/.pyenv"' >> /home/app/.profile
-echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/app/.profile
-echo 'eval "$(pyenv init - bash)"' >> /home/app/.profile
-
-su - app -c 'pyenv install 3.11.11'
-su - app -c "pyenv global 3.11.11 && pip install open-webui"
+# nginx
+apt-get install -y nginx
 
 # post install steps
 curl -O "https://raw.githubusercontent.com/ordinaryexperts/aws-marketplace-utilities/$SCRIPT_VERSION/packer_provisioning_scripts/$SCRIPT_POSTINSTALL"

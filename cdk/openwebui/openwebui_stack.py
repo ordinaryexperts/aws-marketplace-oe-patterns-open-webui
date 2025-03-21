@@ -2,7 +2,6 @@ import os
 import subprocess
 from aws_cdk import (
     Aws,
-    CfnMapping,
     CfnOutput,
     Stack
 )
@@ -21,12 +20,7 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-0077611e201e19f5f"
-AMI_NAME="ordinary-experts-patterns-openwebui-21fd255-20250208-0559"
-generated_ami_ids = {
-    "us-east-1": "ami-0077611e201e19f5f"
-}
-# End generated code block.
+AMI_ID="ami-06b9e0fd198a2bc3e" # ordinary-experts-patterns-openwebui-4059326-20250321-0538
 
 class OpenwebuiStack(Stack):
 
@@ -51,11 +45,10 @@ class OpenwebuiStack(Stack):
                 "g6e.2xlarge",
                 "g6e.4xlarge",
                 "g6e.8xlarge",
-                "g6e.16xlarge",
-                "g6e.12xlarge",
-                "g6e.24xlarge",
-                "g6e.48xlarge"
+                "g6e.16xlarge"
             ],
+            ami_id=AMI_ID,
+            create_and_update_timeout_minutes = 60,
             default_instance_type = "g6e.xlarge",
             singleton = True,
             use_data_volume = True,
@@ -66,18 +59,6 @@ class OpenwebuiStack(Stack):
                 "InstanceSecretName": Aws.STACK_NAME + "/instance/credentials"
             },
             vpc = vpc
-        )
-        ami_mapping={
-            "AMI": {
-                "OEOPENWEBUI": AMI_NAME
-            }
-        }
-        for region in generated_ami_ids.keys():
-            ami_mapping[region] = { "AMI": generated_ami_ids[region] }
-        CfnMapping(
-            self,
-            "AWSAMIRegionMap",
-            mapping=ami_mapping
         )
 
         alb = Alb(

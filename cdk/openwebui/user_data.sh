@@ -51,50 +51,120 @@ EOF
 rm /etc/nginx/sites-enabled/default
 ln -s /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui
 service nginx stop
-service nginx enable
 service nginx start
 
-mkdir /data
-chown app:app /data
-cat <<EOF > /home/app/start-openwebui.sh
+cat <<'EOF' > /root/start-vllm.sh
 #!/bin/bash
-source /home/app/.bashrc
+
+# Ensure Conda is properly initialized for this session
+eval "$(conda shell.bash hook)"
+
+# Activate the open-webui environment
+conda activate open-webui || { echo "Failed to activate Conda environment 'open-webui'"; exit 1; }
+
+# Ensure vllm is installed
+if ! command -v vllm &> /dev/null; then
+    echo "vllm not found. Make sure it is installed in the 'open-webui' environment."
+    exit 1
+fi
+
+# Start vllm
+vllm serve Qwen/Qwen2.5-Coder-7B-Instruct
+EOF
+chmod 700 /root/start-vllm.sh
+
+cat <<'EOF' > /etc/systemd/system/vllm.service
+[Unit]
+Description=vLLM
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/root/start-vllm.sh
+KillSignal=SIGTERM
+KillMode=mixed
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/vllm.log
+StandardError=append:/var/log/vllm.log
+Environment="PATH=/root/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable vllm.service
+systemctl start vllm.service
+
+cat <<EOF > /etc/logrotate.d/vllm
+/var/log/vllm.log {
+    daily
+    rotate 7
+    copytruncate
+    compress
+    missingok
+    notifempty
+}
+EOF
+
+cat <<'EOF' > /root/start-open-webui.sh
+#!/bin/bash
+
+# Ensure Conda is properly initialized for this session
+eval "$(conda shell.bash hook)"
+
+# Activate the open-webui environment
+conda activate open-webui || { echo "Failed to activate Conda environment 'open-webui'"; exit 1; }
+
+# Ensure open-webui is installed
+if ! command -v open-webui &> /dev/null; then
+    echo "open-webui not found. Make sure it is installed in the 'open-webui' environment."
+    exit 1
+fi
+
+# Set up environment variables
 export DATA_DIR=/data
 export WEBUI_SECRET_KEY=assdfsdlfksjdfkldkjfsldkfjslfkajdsflskf
-/home/app/.pyenv/shims/open-webui serve
-EOF
-chown app:app /home/app/start-openwebui.sh
-chmod 700 /home/app/start-openwebui.sh
+export OPENAI_API_BASE_URL=http://127.0.0.1:8000/v1
 
-cat <<EOF > /etc/systemd/system/open-webui.service
+# Start Open WebUI
+open-webui serve
+EOF
+chmod 700 /root/start-open-webui.sh
+
+cat <<'EOF' > /etc/systemd/system/open-webui.service
 [Unit]
 Description=Open WebUI
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/home/app/start-openwebui.sh
+ExecStart=/root/start-open-webui.sh
 KillSignal=SIGTERM
 KillMode=mixed
 Restart=always
 RestartSec=3
-StandardError=syslog
-User=app
+StandardOutput=append:/var/log/open-webui.log
+StandardError=append:/var/log/open-webui.log
+Environment="PATH=/root/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+cat <<EOF > /etc/logrotate.d/open-webui
+/var/log/open-webui.log {
+    daily
+    rotate 7
+    copytruncate
+    compress
+    missingok
+    notifempty
+}
+EOF
+
 systemctl enable open-webui.service
 systemctl start open-webui.service
-echo hi
 success=$?
-
-# give open-webui 2 minutes to come up
-sleep 120
-
-# preload deepseek-r1:1.5b
-time curl http://localhost:11434/api/generate -d '{"model": "deepseek-r1:1.5b", "keep_alive": -1}'
 
 HOST_ENTRY="${Hostname}"
 # this is needed if service isn't publicly available
@@ -103,13 +173,40 @@ if ! grep -q "127.0.0.1.*$HOST_ENTRY" /etc/hosts; then
 fi
 
 URL="https://${Hostname}"
-TIMEOUT=15
-MAX_RETRIES=20
+TIMEOUT=10
+MAX_RETRIES=60
 
 # Only attempt wget if the service start was successful
 if [ $success -eq 0 ]; then
     for ((i=1; i<=MAX_RETRIES; i++)); do
         wget --no-check-certificate --timeout=$TIMEOUT --tries=1 --spider "$URL" >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo "Successfully reached $URL"
+            success=0  # Indicate success
+            break
+        fi
+        echo "Attempt $i/$MAX_RETRIES to reach $URL failed...retrying in $TIMEOUT seconds..."
+        sleep $TIMEOUT
+    done
+
+    if [ $i -gt $MAX_RETRIES ]; then
+        echo "Failed to reach $URL after $MAX_RETRIES attempts."
+        success=1  # Indicate failure
+    fi
+else
+    echo "Service failed to start. Skipping URL checks."
+    success=1  # Indicate failure
+fi
+
+# vllm
+URL="http://127.0.0.1:8000/v1/models"
+TIMEOUT=10
+MAX_RETRIES=180
+
+# Only attempt wget if the service start was successful
+if [ $success -eq 0 ]; then
+    for ((i=1; i<=MAX_RETRIES; i++)); do
+        wget --no-check-certificate --timeout=$TIMEOUT --tries=1 "$URL" >/dev/null 2>&1
         if [ $? -eq 0 ]; then
             echo "Successfully reached $URL"
             success=0  # Indicate success
