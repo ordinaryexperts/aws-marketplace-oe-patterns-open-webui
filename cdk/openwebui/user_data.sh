@@ -69,7 +69,7 @@ if ! command -v vllm &> /dev/null; then
 fi
 
 # Start vllm
-vllm serve Qwen/Qwen2.5-Coder-7B-Instruct
+vllm serve ${ModelName}
 EOF
 chmod 700 /root/start-vllm.sh
 
