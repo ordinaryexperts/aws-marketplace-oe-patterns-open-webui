@@ -26,7 +26,7 @@ else:
 
 AMI_ID="ami-06b9e0fd198a2bc3e" # ordinary-experts-patterns-openwebui-4059326-20250321-0538
 
-class OpenwebuiStack(Stack):
+class OpenWebuiStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -63,7 +63,7 @@ class OpenwebuiStack(Stack):
 
         dns = Dns(self, "Dns")
 
-        with open("openwebui/user_data.sh") as f:
+        with open("open_webui/user_data.sh") as f:
             user_data = f.read()
         asg = Asg(
             self,

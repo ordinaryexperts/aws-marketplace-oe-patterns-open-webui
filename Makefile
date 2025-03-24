@@ -11,7 +11,7 @@ deploy: build
 	--parameters AsgAmiId=ami-06b9e0fd198a2bc3e \
 	--parameters AsgReprovisionString=20250321.1 \
 	--parameters AsgInstanceType=g6e.xlarge \
-	--parameters DnsHostname=openwebui-${USER}.dev.patterns.ordinaryexperts.com \
+	--parameters DnsHostname=open-webui-${USER}.dev.patterns.ordinaryexperts.com \
 	--parameters DnsRoute53HostedZoneName=dev.patterns.ordinaryexperts.com \
 	--parameters Model=Qwen/Qwen2.5-Coder-7B-Instruct \
 	--parameters VpcId=vpc-00425deda4c835455 \

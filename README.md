@@ -1,2 +1,3 @@
-# aws-marketplace-oe-patterns-openwebui
-Deploy Open WebUI with Deepseek R1 on AWS
+# aws-marketplace-oe-patterns-open-webui
+
+Deploy Open WebUI on AWS

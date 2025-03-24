@@ -16,7 +16,7 @@
         "delay_seconds": 60,
         "max_attempts": 60
       },
-      "ami_name": "ordinary-experts-patterns-openwebui-{{user `version`}}-{{isotime \"20060102-0304\"}}",
+      "ami_name": "ordinary-experts-patterns-open-webui-{{user `version`}}-{{isotime \"20060102-0304\"}}",
       "launch_block_device_mappings": [{
         "device_name": "/dev/sda1",
         "volume_type": "gp3",
