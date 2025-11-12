@@ -53,6 +53,16 @@ ln -s /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui
 service nginx stop
 service nginx start
 
+# VLLM
+
+# custom vllm config
+CUSTOM_CONFIG="// no custom config defined"
+if [[ "${CustomVllmConfigParameterArn}" != "" ]]; then
+    CUSTOM_CONFIG_TITLE="// custom config fetched from ${CustomVllmConfigParameterArn}"
+    CUSTOM_CONFIG_VALUE=$(aws ssm get-parameter --name "${CustomVllmConfigParameterArn}" --with-decryption --output text --query Parameter.Value)
+    CUSTOM_CONFIG=$(printf "%s\n\n%s" "$CUSTOM_CONFIG_TITLE" "$CUSTOM_CONFIG_VALUE")
+fi
+
 cat <<'EOF' > /root/start-vllm.sh
 #!/bin/bash
 

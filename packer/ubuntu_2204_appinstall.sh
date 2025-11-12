@@ -131,22 +131,20 @@ EOF
 # rust
 apt-get install -y rustc cargo
 
-# NVIDIA drivers
-wget https://us.download.nvidia.com/tesla/550.54.15/nvidia-driver-local-repo-ubuntu2204-550.54.15_1.0-1_amd64.deb
-dpkg -i nvidia-driver-local-repo-ubuntu2204-550.54.15_1.0-1_amd64.deb
-cp /var/nvidia-driver-local-repo-ubuntu2204-550.54.15/nvidia-driver-local-*-keyring.gpg /usr/share/keyrings/
+# nvtop (GPU monitoring tool)
 apt-get install -y nvtop
 
-# CUDA
+# CUDA and matching NVIDIA driver
+# Configure CUDA repository pin priority
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
 mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
+# Install local CUDA repository package
 wget https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda-repo-ubuntu2204-12-8-local_12.8.1-570.124.06-1_amd64.deb
 dpkg -i cuda-repo-ubuntu2204-12-8-local_12.8.1-570.124.06-1_amd64.deb
 cp /var/cuda-repo-ubuntu2204-12-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
 apt-get update
-apt-get -y install cuda-toolkit-12-8
-apt-get install -y nvidia-driver-550-open
-apt-get install -y cuda-drivers-550
+# Install CUDA meta-package (includes toolkit and matching driver)
+apt-get -y install cuda
 
 # cuDNN
 wget https://developer.download.nvidia.com/compute/cudnn/9.8.0/local_installers/cudnn-local-repo-ubuntu2204-9.8.0_1.0-1_amd64.deb

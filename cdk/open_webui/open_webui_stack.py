@@ -24,12 +24,26 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-06b9e0fd198a2bc3e" # ordinary-experts-patterns-openwebui-4059326-20250321-0538
+AMI_ID="ami-0ab715b1314a24cd6" # ordinary-experts-patterns-open-webui-f0db43f-20250615-0346
 
 class OpenWebuiStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        self.custom_open_webui_config_parameter_arn_param = CfnParameter(
+            self,
+            "CustomOpenWebuiConfigParameterArn",
+            default="",
+            description="Optional: ARN of SSM Parameter Store Secure String containing custom config for Open WebUI."
+        )
+
+        self.custom_vllm_config_parameter_arn_param = CfnParameter(
+            self,
+            "CustomVllmConfigParameterArn",
+            default="",
+            description="Optional: ARN of SSM Parameter Store Secure String containing custom config for VLLM."
+        )
 
         self.model_param = CfnParameter(
             self,
@@ -82,8 +96,10 @@ class OpenWebuiStack(Stack):
             use_data_volume = True,
             user_data_contents = user_data,
             user_data_variables={
-                "Hostname": dns.hostname(),
+                "CustomOpenWebuiConfigParameterArn": self.custom_vllm_config_parameter_arn_param.value_as_string,
+                "CustomVllmConfigParameterArn": self.custom_open_webui_config_parameter_arn_param.value_as_string,
                 "HostedZoneName": dns.route_53_hosted_zone_name_param.value_as_string,
+                "Hostname": dns.hostname(),
                 "InstanceSecretName": Aws.STACK_NAME + "/instance/credentials",
                 "ModelName": Token.as_string(
                     Fn.condition_if(
