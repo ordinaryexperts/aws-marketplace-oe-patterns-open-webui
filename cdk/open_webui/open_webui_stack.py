@@ -5,6 +5,7 @@ from aws_cdk import (
     CfnCondition,
     CfnOutput,
     CfnParameter,
+    CfnRule,
     Fn,
     Stack,
     Token
@@ -24,7 +25,7 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-0ab715b1314a24cd6" # ordinary-experts-patterns-open-webui-f0db43f-20250615-0346
+AMI_ID="ami-062f8c7b5f728bb10" # ordinary-experts-patterns-open-webui-ac9f890-nvme-direct-download-20251116-0736 (Ubuntu 24.04 + Python 3.12 venv, model downloads directly to NVMe on boot)
 
 class OpenWebuiStack(Stack):
 
@@ -51,7 +52,13 @@ class OpenWebuiStack(Stack):
             default="Qwen/Qwen2.5-Coder-7B-Instruct",
             allowed_values=[
                 "microsoft/phi-4",
-                "Qwen/Qwen2.5-Coder-7B-Instruct"
+                "microsoft/Phi-4-mini-reasoning",
+                "nvidia/OpenReasoning-Nemotron-7B",
+                "nvidia/OpenReasoning-Nemotron-14B",
+                "nvidia/OpenReasoning-Nemotron-32B",
+                "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "Qwen/Qwen2.5-Coder-14B-Instruct",
+                "Qwen/Qwen2.5-Coder-32B-Instruct"
             ],
             description="The LLM to load. These models have been tested with this configuration. To try a different model, see the ModelOverride parameter"
         )
@@ -83,6 +90,11 @@ class OpenWebuiStack(Stack):
             self,
             "Asg",
             allowed_instance_types = [
+                "g6.xlarge",
+                "g6.2xlarge",
+                "g6.4xlarge",
+                "g6.8xlarge",
+                "g6.16xlarge",
                 "g6e.xlarge",
                 "g6e.2xlarge",
                 "g6e.4xlarge",
@@ -90,8 +102,8 @@ class OpenWebuiStack(Stack):
                 "g6e.16xlarge"
             ],
             ami_id=AMI_ID,
-            create_and_update_timeout_minutes = 60,
-            default_instance_type = "g6e.xlarge",
+            create_and_update_timeout_minutes = 60,  # 1 hour - vLLM model download and load typically takes 10-15 minutes on NVMe
+            default_instance_type = "g6.xlarge",
             singleton = True,
             use_data_volume = True,
             user_data_contents = user_data,
@@ -122,12 +134,59 @@ class OpenWebuiStack(Stack):
         asg.asg.target_group_arns = [ alb.target_group.ref ]
 
         dns.add_alb(alb)
-        
+
+        # CloudFormation Rules for fail-fast validation of model/instance compatibility
+        # Rule 1: Prevent 14B+ models on instances with < 48GB VRAM (only g6.xlarge with 24GB)
+        # Note: g6e.xlarge has 48GB VRAM and works with 14B models
+        # Tested: phi-4 and Qwen 14B both fail on g6.xlarge (24GB VRAM)
+        CfnRule(
+            self,
+            "Model14BRequiresLargerInstance",
+            assertions=[
+                {
+                    "assert": Fn.condition_or(
+                        # Allow if NOT using a 14B/32B model...
+                        Fn.condition_not(
+                            Fn.condition_or(
+                                Fn.condition_equals(self.model_param.value_as_string, "microsoft/phi-4"),
+                                Fn.condition_equals(self.model_param.value_as_string, "nvidia/OpenReasoning-Nemotron-14B"),
+                                Fn.condition_equals(self.model_param.value_as_string, "nvidia/OpenReasoning-Nemotron-32B"),
+                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen2.5-Coder-14B-Instruct"),
+                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen2.5-Coder-32B-Instruct")
+                            )
+                        ),
+                        # OR allow if instance is NOT g6.xlarge (g6.xlarge has only 24GB VRAM)
+                        Fn.condition_not(
+                            Fn.condition_equals(asg.instance_type_param.value_as_string, "g6.xlarge")
+                        )
+                    ),
+                    "assertDescription": "14B and 32B models require at least 48GB VRAM. The g6.xlarge instance only has 24GB VRAM. Please select g6e.xlarge (48GB) or larger: g6.2xlarge, g6.4xlarge, g6.8xlarge, g6.16xlarge, g6e.2xlarge, g6e.4xlarge, g6e.8xlarge, or g6e.16xlarge."
+                }
+            ]
+        )
+
         CfnOutput(
             self,
             "FirstUseInstructions",
             description="Instructions for getting started",
-            value="TODO"
+            value=Fn.sub(
+                "Stack deployment complete! Access Open WebUI at https://${Hostname}. "
+                "Initial setup: 1) Create admin account at first login. "
+                "2) Navigate to Settings > Account to create an API key for aider/external tools. "
+                "Instance type: ${InstanceType}, Model: ${ModelName}. "
+                "For troubleshooting, check CloudWatch Logs or /var/log/vllm.log on the EC2 instance.",
+                {
+                    "Hostname": dns.hostname(),
+                    "InstanceType": asg.instance_type_param.value_as_string,
+                    "ModelName": Token.as_string(
+                        Fn.condition_if(
+                            self.model_override_exists_condition.logical_id,
+                            self.model_override_param.value_as_string,
+                            self.model_param.value_as_string
+                        )
+                    )
+                }
+            )
         )
 
         parameter_groups = [

@@ -53,6 +53,42 @@ ln -s /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui
 service nginx stop
 service nginx start
 
+# NVMe Instance Store Setup
+# Mount NVMe instance store for high-performance model caching
+echo "Setting up NVMe instance store for model caching..."
+
+# Detect NVMe instance store device (typically nvme1n1 on g6e instances)
+# nvme0n1 is the root volume, nvme1n1 is the instance store
+NVME_DEVICE="/dev/nvme1n1"
+
+if [ -b "$NVME_DEVICE" ]; then
+    echo "Found NVMe instance store: $NVME_DEVICE"
+
+    # Format the device (this is ephemeral storage, safe to format on each boot)
+    mkfs.ext4 -F "$NVME_DEVICE"
+
+    # Create mount point and mount
+    mkdir -p /mnt/instance-store
+    mount "$NVME_DEVICE" /mnt/instance-store
+    chmod 777 /mnt/instance-store
+
+    # Create Hugging Face cache directory on instance store
+    mkdir -p /mnt/instance-store/huggingface
+    chmod 777 /mnt/instance-store/huggingface
+
+    # Create symlink from default cache location to instance store
+    # This ensures all Hugging Face downloads go directly to NVMe
+    mkdir -p /root/.cache
+    ln -s /mnt/instance-store/huggingface /root/.cache/huggingface
+
+    echo "NVMe instance store configured at /mnt/instance-store"
+    echo "Hugging Face cache will use: /root/.cache/huggingface -> /mnt/instance-store/huggingface"
+else
+    echo "WARNING: No NVMe instance store found at $NVME_DEVICE"
+    echo "Model will be downloaded to EBS (slower performance)"
+    mkdir -p /root/.cache/huggingface
+fi
+
 # VLLM
 
 # custom vllm config
@@ -66,20 +102,20 @@ fi
 cat <<'EOF' > /root/start-vllm.sh
 #!/bin/bash
 
-# Ensure Conda is properly initialized for this session
-eval "$(conda shell.bash hook)"
-
-# Activate the open-webui environment
-conda activate open-webui || { echo "Failed to activate Conda environment 'open-webui'"; exit 1; }
+# Activate the Python virtual environment
+source /opt/open-webui-venv/bin/activate || { echo "Failed to activate venv '/opt/open-webui-venv'"; exit 1; }
 
 # Ensure vllm is installed
 if ! command -v vllm &> /dev/null; then
-    echo "vllm not found. Make sure it is installed in the 'open-webui' environment."
+    echo "vllm not found. Make sure it is installed in the venv."
     exit 1
 fi
 
-# Start vllm
-vllm serve ${ModelName}
+# Start vllm with GPU memory utilization flag
+# vLLM will automatically download the model to /root/.cache/huggingface (symlinked to NVMe)
+# on first startup. This typically takes 5-10 minutes for ~29GB models when downloading to NVMe.
+# Model loading from NVMe takes ~3 minutes after download completes.
+vllm serve ${ModelName} --gpu-memory-utilization 0.95
 EOF
 chmod 700 /root/start-vllm.sh
 
@@ -97,7 +133,7 @@ Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/vllm.log
 StandardError=append:/var/log/vllm.log
-Environment="PATH=/root/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/opt/open-webui-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
 WantedBy=multi-user.target
@@ -119,15 +155,12 @@ EOF
 cat <<'EOF' > /root/start-open-webui.sh
 #!/bin/bash
 
-# Ensure Conda is properly initialized for this session
-eval "$(conda shell.bash hook)"
-
-# Activate the open-webui environment
-conda activate open-webui || { echo "Failed to activate Conda environment 'open-webui'"; exit 1; }
+# Activate the Python virtual environment
+source /opt/open-webui-venv/bin/activate || { echo "Failed to activate venv '/opt/open-webui-venv'"; exit 1; }
 
 # Ensure open-webui is installed
 if ! command -v open-webui &> /dev/null; then
-    echo "open-webui not found. Make sure it is installed in the 'open-webui' environment."
+    echo "open-webui not found. Make sure it is installed in the venv."
     exit 1
 fi
 
@@ -135,6 +168,7 @@ fi
 export DATA_DIR=/data
 export WEBUI_SECRET_KEY=assdfsdlfksjdfkldkjfsldkfjslfkajdsflskf
 export OPENAI_API_BASE_URL=http://127.0.0.1:8000/v1
+export ENABLE_SIGNUP=true
 
 # Start Open WebUI
 open-webui serve
@@ -155,7 +189,7 @@ Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/open-webui.log
 StandardError=append:/var/log/open-webui.log
-Environment="PATH=/root/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/opt/open-webui-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
 WantedBy=multi-user.target
@@ -208,17 +242,18 @@ else
     success=1  # Indicate failure
 fi
 
-# vllm
+# Wait for vLLM to be ready before signaling CloudFormation
+echo "Waiting for vLLM model loading to complete (this may take 60+ minutes)..."
 URL="http://127.0.0.1:8000/v1/models"
 TIMEOUT=10
-MAX_RETRIES=180
+MAX_RETRIES=360
 
-# Only attempt wget if the service start was successful
+# Only attempt wget if the Open WebUI service start was successful
 if [ $success -eq 0 ]; then
     for ((i=1; i<=MAX_RETRIES; i++)); do
         wget --no-check-certificate --timeout=$TIMEOUT --tries=1 "$URL" >/dev/null 2>&1
         if [ $? -eq 0 ]; then
-            echo "Successfully reached $URL"
+            echo "Successfully reached $URL - vLLM is ready!"
             success=0  # Indicate success
             break
         fi
@@ -227,12 +262,14 @@ if [ $success -eq 0 ]; then
     done
 
     if [ $i -gt $MAX_RETRIES ]; then
-        echo "Failed to reach $URL after $MAX_RETRIES attempts."
+        echo "Failed to reach $URL after $MAX_RETRIES attempts - vLLM failed to load"
         success=1  # Indicate failure
     fi
 else
-    echo "Service failed to start. Skipping URL checks."
+    echo "Skipping vLLM checks since Open WebUI failed to start."
     success=1  # Indicate failure
 fi
 
+# Signal CloudFormation after vLLM is ready
+echo "Signaling CloudFormation with status (success=$success)"
 cfn-signal --exit-code $success --stack ${AWS::StackName} --resource Asg --region ${AWS::Region}
