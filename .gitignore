@@ -29,3 +29,6 @@ logs/
 # shared Makefiles/scripts
 common.mk
 scripts/common/*
+
+# aider
+.aider*

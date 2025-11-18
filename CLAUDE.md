@@ -167,6 +167,73 @@ Defined in `cdk/requirements.txt`:
 ### Docker Base Image
 The devenv service builds from `ordinaryexperts/aws-marketplace-patterns-devenv` (version specified in Dockerfile), which contains CDK, Python, AWS CLI, and other tools.
 
+## Debugging and Troubleshooting
+
+### Finding CloudWatch Log Groups for a Deployment
+
+When troubleshooting a deployment, you need to access the CloudWatch logs for the EC2 instances. The log groups are created as part of the CloudFormation stack.
+
+**Step 1: Get the log groups from CloudFormation**
+
+```bash
+export AWS_PROFILE=patterns-dev
+STACK_NAME="oe-patterns-open-webui-dylan"  # Or your stack name
+
+# List all log groups in the stack
+aws cloudformation describe-stack-resources \
+  --stack-name $STACK_NAME \
+  --query 'StackResources[?ResourceType==`AWS::Logs::LogGroup`].[LogicalResourceId,PhysicalResourceId]' \
+  --output table
+```
+
+This will show you two log groups:
+- **AsgAppLogGroup** - Application logs (vLLM, Open WebUI, nginx)
+- **AsgSystemLogGroup** - System logs (syslog, user data script execution)
+
+**Step 2: Find log streams for a specific instance**
+
+```bash
+# Get the instance ID from CloudFormation events or EC2
+INSTANCE_ID="i-0123456789abcdef0"  # Replace with your instance ID
+
+# List app log streams for the instance
+aws logs describe-log-streams \
+  --log-group-name "oe-patterns-open-webui-dylan-AsgAppLogGroup-XXXXX" \
+  --log-stream-name-prefix "$INSTANCE_ID" \
+  --query 'logStreams[*].logStreamName' \
+  --output table
+```
+
+**Step 3: View specific logs**
+
+Application log streams follow the pattern: `{instance-id}-{log-file-path}`
+
+Common log streams:
+- `{instance-id}-/var/log/vllm.log` - vLLM server logs (model loading, inference)
+- `{instance-id}-/var/log/open-webui.log` - Open WebUI application logs
+- `{instance-id}-/var/log/nginx/error.log` - nginx errors
+- `{instance-id}-/var/log/nginx/access.log` - nginx access logs
+
+```bash
+# View vLLM logs (last 100 lines)
+aws logs tail "oe-patterns-open-webui-dylan-AsgAppLogGroup-XXXXX" \
+  --log-stream-name "$INSTANCE_ID-/var/log/vllm.log" \
+  --format short \
+  --since 1h
+
+# Follow logs in real-time
+aws logs tail "oe-patterns-open-webui-dylan-AsgAppLogGroup-XXXXX" \
+  --follow \
+  --format short
+```
+
+**Common Debugging Scenarios:**
+
+1. **Instance fails to signal CloudFormation** - Check system logs for user data script errors
+2. **Model loading failures** - Check `/var/log/vllm.log` for CUDA, VRAM, or model download errors
+3. **Open WebUI not accessible** - Check nginx logs and `/var/log/open-webui.log`
+4. **No logs appear** - Instance failed before CloudWatch agent started; check EC2 console logs
+
 ## Files to Update When Releasing
 
 1. `cdk/open_webui/open_webui_stack.py` - Update `AMI_ID` constant
