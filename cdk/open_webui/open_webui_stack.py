@@ -2,6 +2,7 @@ import os
 import subprocess
 from aws_cdk import (
     Aws,
+    aws_iam,
     CfnCondition,
     CfnOutput,
     CfnParameter,
@@ -76,6 +77,18 @@ class OpenWebuiStack(Stack):
             expression=Fn.condition_not(Fn.condition_equals(self.model_override_param.value, ""))
         )
 
+        self.custom_open_webui_config_parameter_arn_condition = CfnCondition(
+            self,
+            "CustomOpenWebuiConfigParameterArnCondition",
+            expression=Fn.condition_not(Fn.condition_equals(self.custom_open_webui_config_parameter_arn_param.value, ""))
+        )
+
+        self.custom_vllm_config_parameter_arn_condition = CfnCondition(
+            self,
+            "CustomVllmConfigParameterArnCondition",
+            expression=Fn.condition_not(Fn.condition_equals(self.custom_vllm_config_parameter_arn_param.value, ""))
+        )
+
         # vpc
         vpc = Vpc(
             self,
@@ -108,8 +121,8 @@ class OpenWebuiStack(Stack):
             use_data_volume = True,
             user_data_contents = user_data,
             user_data_variables={
-                "CustomOpenWebuiConfigParameterArn": self.custom_vllm_config_parameter_arn_param.value_as_string,
-                "CustomVllmConfigParameterArn": self.custom_open_webui_config_parameter_arn_param.value_as_string,
+                "CustomOpenWebuiConfigParameterArn": self.custom_open_webui_config_parameter_arn_param.value_as_string,
+                "CustomVllmConfigParameterArn": self.custom_vllm_config_parameter_arn_param.value_as_string,
                 "HostedZoneName": dns.route_53_hosted_zone_name_param.value_as_string,
                 "Hostname": dns.hostname(),
                 "InstanceSecretName": Aws.STACK_NAME + "/instance/credentials",
@@ -122,6 +135,59 @@ class OpenWebuiStack(Stack):
                 )
             },
             vpc = vpc
+        )
+
+        # Update IAM policies via overrides to make them conditional
+        # Only apply the Open WebUI config policy if the parameter ARN is provided
+        asg.iam_instance_role.add_property_override(
+            "Policies.4",
+            {
+                "Fn::If": [
+                    "CustomOpenWebuiConfigParameterArnCondition",
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": "ssm:GetParameter",
+                                    "Effect": "Allow",
+                                    "Resource": {
+                                        "Ref": "CustomOpenWebuiConfigParameterArn"
+                                    }
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "AllowReadOpenWebuiConfigParameter"
+                    },
+                    { "Ref": "AWS::NoValue" }
+                ]
+            }
+        )
+
+        # Only apply the vLLM config policy if the parameter ARN is provided
+        asg.iam_instance_role.add_property_override(
+            "Policies.5",
+            {
+                "Fn::If": [
+                    "CustomVllmConfigParameterArnCondition",
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": "ssm:GetParameter",
+                                    "Effect": "Allow",
+                                    "Resource": {
+                                        "Ref": "CustomVllmConfigParameterArn"
+                                    }
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "AllowReadVllmConfigParameter"
+                    },
+                    { "Ref": "AWS::NoValue" }
+                ]
+            }
         )
 
         alb = Alb(
@@ -198,6 +264,15 @@ class OpenWebuiStack(Stack):
                     self.model_param.logical_id,
                     self.model_override_param.logical_id
                 ]
+            },
+            {
+                "Label": {
+                    "default": "Advanced Config"
+                },
+                "Parameters": [
+                    self.custom_open_webui_config_parameter_arn_param.logical_id,
+                    self.custom_vllm_config_parameter_arn_param.logical_id
+                ]
             }
         ]
         parameter_groups += alb.metadata_parameter_group()
@@ -216,6 +291,12 @@ class OpenWebuiStack(Stack):
                     },
                     self.model_override_param.logical_id: {
                         "default": "Model Override"
+                    },
+                    self.custom_open_webui_config_parameter_arn_param.logical_id: {
+                        "default": "Custom Open WebUI Config SSM Parameter ARN"
+                    },
+                    self.custom_vllm_config_parameter_arn_param.logical_id: {
+                        "default": "Custom vLLM Config SSM Parameter ARN"
                     },
                     **alb.metadata_parameter_labels(),
                     **asg.metadata_parameter_labels(),

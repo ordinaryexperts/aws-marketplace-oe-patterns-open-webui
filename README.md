@@ -281,6 +281,150 @@ The deployment supports both G6 (NVIDIA L4) and G6e (NVIDIA L40S) instance famil
 
 **Cost Savings:** Using g6.xlarge instead of g6e.xlarge saves ~$760/month (57%) with minimal performance impact for single-user workloads.
 
+## Custom Configuration
+
+You can customize both vLLM and Open WebUI settings by providing configuration via AWS Systems Manager Parameter Store. This allows you to override default settings without modifying the CDK code.
+
+### Creating Configuration Parameters
+
+Create SSM Parameter Store SecureString parameters containing your custom configuration:
+
+```bash
+# Custom vLLM configuration (additional CLI arguments)
+aws ssm put-parameter \
+  --name "/oe-patterns/open-webui/${USER}/vllm-config" \
+  --type "SecureString" \
+  --value "--max-model-len 8192 --max-num-seqs 256"
+
+# Custom Open WebUI configuration (environment variables)
+aws ssm put-parameter \
+  --name "/oe-patterns/open-webui/${USER}/openwebui-config" \
+  --type "SecureString" \
+  --value "WEBUI_NAME='My Custom Instance'
+ENABLE_SIGNUP=false
+DEFAULT_USER_ROLE=pending"
+```
+
+### Using Custom Configurations in Deployment
+
+Pass the parameter ARNs when deploying:
+
+```bash
+# In Makefile
+--parameters CustomVllmConfigParameterArn=arn:aws:ssm:us-east-1:ACCOUNT_ID:parameter/path/to/vllm-config \
+--parameters CustomOpenWebuiConfigParameterArn=arn:aws:ssm:us-east-1:ACCOUNT_ID:parameter/path/to/openwebui-config
+```
+
+Or via CDK CLI:
+
+```bash
+cdk deploy \
+  --parameters CustomVllmConfigParameterArn=arn:aws:ssm:...:parameter/vllm-config \
+  --parameters CustomOpenWebuiConfigParameterArn=arn:aws:ssm:...:parameter/openwebui-config
+```
+
+### vLLM Configuration Options
+
+The vLLM configuration parameter accepts additional command-line arguments that are appended to the `vllm serve` command. Common options include:
+
+**Performance Tuning:**
+- `--max-model-len 8192` - Override maximum sequence length
+- `--max-num-seqs 256` - Maximum number of sequences to process in parallel
+- `--gpu-memory-utilization 0.95` - GPU memory utilization (default: 0.95)
+- `--swap-space 4` - CPU swap space size in GiB
+
+**Quantization:**
+- `--quantization awq` - Enable AWQ quantization
+- `--quantization gptq` - Enable GPTQ quantization
+
+**Advanced:**
+- `--tensor-parallel-size 2` - Number of GPUs for tensor parallelism
+- `--enable-prefix-caching` - Enable automatic prefix caching
+- `--disable-log-stats` - Disable logging statistics
+
+See the [vLLM documentation](https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html) for the complete list of options.
+
+### Open WebUI Configuration Options
+
+The Open WebUI configuration parameter accepts environment variable assignments, one per line. Each line should be in the format `VAR_NAME=value`. Empty lines and lines starting with `#` (comments) are ignored.
+
+**Note:** The deployment automatically adds `export` to each variable during instance startup, so you don't need to include it.
+
+Common options include:
+
+**Branding:**
+- `WEBUI_NAME='Company Name'` - Custom instance name
+- `WEBUI_URL='https://ai.example.com'` - Custom URL
+
+**Authentication:**
+- `ENABLE_SIGNUP=false` - Disable new user registration
+- `DEFAULT_USER_ROLE=pending` - Set default role for new users (admin/user/pending)
+- `ENABLE_LOGIN_FORM=false` - Disable login form (SSO only)
+
+**Security:**
+- `WEBUI_SECRET_KEY='your-secret-key'` - Custom secret key for sessions
+- `ENABLE_API_KEY=true` - Enable API key authentication
+
+**Storage:**
+- `DATA_DIR=/data` - Data directory (should remain /data for persistence)
+
+See the [Open WebUI documentation](https://docs.openwebui.com/getting-started/env-configuration) for the complete list of environment variables.
+
+### Example: Production Configuration
+
+```bash
+# vLLM: Optimize for throughput
+aws ssm put-parameter \
+  --name "/oe-patterns/open-webui/prod/vllm-config" \
+  --type "SecureString" \
+  --value "--max-model-len 16384 --max-num-seqs 512 --enable-prefix-caching"
+
+# Open WebUI: Lock down for production
+aws ssm put-parameter \
+  --name "/oe-patterns/open-webui/prod/openwebui-config" \
+  --type "SecureString" \
+  --value "WEBUI_NAME='Production AI Assistant'
+ENABLE_SIGNUP=false
+DEFAULT_USER_ROLE=pending
+ENABLE_API_KEY=true"
+```
+
+### Updating Configuration
+
+**Open WebUI:** Configuration is fetched from SSM Parameter Store every time the service starts. To apply updated configuration:
+
+```bash
+# Update the SSM parameter
+aws ssm put-parameter \
+  --name "/your/parameter/path" \
+  --type "SecureString" \
+  --value "WEBUI_NAME='Updated Name'" \
+  --overwrite
+
+# Restart the service to apply changes (via SSM on the instance)
+aws ssm send-command \
+  --instance-ids INSTANCE_ID \
+  --document-name "AWS-RunShellScript" \
+  --parameters 'commands=["systemctl restart open-webui"]'
+```
+
+**vLLM:** Configuration is embedded in the startup script at instance boot. To update vLLM configuration, you must redeploy the stack with a new `AsgReprovisionString` value to force instance replacement.
+
+### Verification
+
+After deployment, verify your custom configurations are applied:
+
+```bash
+# Check vLLM process arguments
+aws ssm start-session --target INSTANCE_ID
+ps aux | grep vllm
+
+# Check Open WebUI environment
+cat /proc/$(pgrep -f "open-webui serve")/environ | tr '\0' '\n' | grep -E 'WEBUI_NAME|ENABLE_SIGNUP'
+```
+
+You can also check the CloudWatch Logs for the instance to see the configuration being fetched during startup.
+
 ## Support
 
 For issues and questions:

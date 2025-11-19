@@ -91,15 +91,15 @@ fi
 
 # VLLM
 
-# custom vllm config
-CUSTOM_CONFIG="// no custom config defined"
+# custom vllm config - fetch additional CLI arguments from SSM Parameter Store
+CUSTOM_VLLM_ARGS=""
 if [[ "${CustomVllmConfigParameterArn}" != "" ]]; then
-    CUSTOM_CONFIG_TITLE="// custom config fetched from ${CustomVllmConfigParameterArn}"
-    CUSTOM_CONFIG_VALUE=$(aws ssm get-parameter --name "${CustomVllmConfigParameterArn}" --with-decryption --output text --query Parameter.Value)
-    CUSTOM_CONFIG=$(printf "%s\n\n%s" "$CUSTOM_CONFIG_TITLE" "$CUSTOM_CONFIG_VALUE")
+    echo "Fetching custom vLLM config from ${CustomVllmConfigParameterArn}..."
+    CUSTOM_VLLM_ARGS=$(aws ssm get-parameter --name "${CustomVllmConfigParameterArn}" --with-decryption --output text --query Parameter.Value)
+    echo "Custom vLLM args: $CUSTOM_VLLM_ARGS"
 fi
 
-cat <<'EOF' > /root/start-vllm.sh
+cat <<EOF > /root/start-vllm.sh
 #!/bin/bash
 
 # Activate the Python virtual environment
@@ -115,7 +115,7 @@ fi
 # vLLM will automatically download the model to /root/.cache/huggingface (symlinked to NVMe)
 # on first startup. This typically takes 5-10 minutes for ~29GB models when downloading to NVMe.
 # Model loading from NVMe takes ~3 minutes after download completes.
-vllm serve ${ModelName} --gpu-memory-utilization 0.95
+vllm serve ${ModelName} --gpu-memory-utilization 0.95 $CUSTOM_VLLM_ARGS
 EOF
 chmod 700 /root/start-vllm.sh
 
@@ -152,6 +152,8 @@ cat <<EOF > /etc/logrotate.d/vllm
 }
 EOF
 
+# Open WebUI
+
 cat <<'EOF' > /root/start-open-webui.sh
 #!/bin/bash
 
@@ -169,6 +171,29 @@ export DATA_DIR=/data
 export WEBUI_SECRET_KEY=assdfsdlfksjdfkldkjfsldkfjslfkajdsflskf
 export OPENAI_API_BASE_URL=http://127.0.0.1:8000/v1
 export ENABLE_SIGNUP=true
+
+# Fetch and apply custom environment variables from SSM Parameter Store
+if [[ "${CustomOpenWebuiConfigParameterArn}" != "" ]]; then
+  echo "Fetching custom Open WebUI config from ${CustomOpenWebuiConfigParameterArn}..."
+  CUSTOM_OPENWEBUI_ENV=$(aws ssm get-parameter --name "${CustomOpenWebuiConfigParameterArn}" --with-decryption --output text --query Parameter.Value 2>/dev/null)
+  if [[ $? -eq 0 && -n "$CUSTOM_OPENWEBUI_ENV" ]]; then
+    echo "Applying custom Open WebUI configuration..."
+    while IFS= read -r line; do
+      # Skip empty lines and comments
+      if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
+        # Extract variable name for logging (before = sign)
+        var_name="${line%%=*}"
+        echo "  Setting environment variable: $var_name"
+        export "$line"
+      fi
+    done <<< "$CUSTOM_OPENWEBUI_ENV"
+    echo "Custom Open WebUI configuration applied successfully"
+  else
+    echo "No custom Open WebUI config found or error fetching parameter"
+  fi
+else
+  echo "No custom Open WebUI config parameter ARN provided"
+fi
 
 # Start Open WebUI
 open-webui serve
