@@ -25,7 +25,7 @@ deploy: build clean-cdk
 	--require-approval never \
 	--parameters AlbCertificateArn=arn:aws:acm:us-east-1:992593896645:certificate/943928d7-bfce-469c-b1bf-11561024580e \
 	--parameters AlbIngressCidr=76.88.34.94/32 \
-	--parameters AsgAmiIdv100=ami-0015de299f241b6da \
+	--parameters AsgAmiIdv100=ami-0339857e2a2828918 \
 	--parameters AsgReprovisionString=20251121.6 \
 	--parameters AsgInstanceType=g6.xlarge \
 	--parameters Model=Qwen/Qwen2.5-Coder-7B-Instruct \
