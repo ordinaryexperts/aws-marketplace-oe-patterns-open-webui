@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# aws cloudwatch
-sed -i 's/ASG_APP_LOG_GROUP_PLACEHOLDER/${AsgAppLogGroup}/g' /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-sed -i 's/ASG_SYSTEM_LOG_GROUP_PLACEHOLDER/${AsgSystemLogGroup}/g' /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-systemctl enable amazon-cloudwatch-agent
-systemctl start amazon-cloudwatch-agent
-
 mkdir -p /opt/oe/patterns
 
+# Check and fetch secrets from Secrets Manager (check-secrets.py is pre-installed in AMI)
+/root/check-secrets.py ${AWS::Region} ${SecretArn}
+
+SECRET_NAME=$(aws secretsmanager describe-secret --secret-id ${SecretArn} --region ${AWS::Region} | jq -r .Name)
+aws ssm get-parameter \
+    --name "/aws/reference/secretsmanager/$SECRET_NAME" \
+    --with-decryption \
+    --query Parameter.Value \
+    --region ${AWS::Region} \
+| jq -r . > /opt/oe/patterns/secrets.json
+
+WEBUI_SECRET_KEY=$(cat /opt/oe/patterns/secrets.json | jq -r .WEBUI_SECRET_KEY)
 
 # nginx
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
@@ -154,7 +160,7 @@ EOF
 
 # Open WebUI
 
-cat <<'EOF' > /root/start-open-webui.sh
+cat <<EOF > /root/start-open-webui.sh
 #!/bin/bash
 
 # Activate the Python virtual environment
@@ -168,25 +174,29 @@ fi
 
 # Set up environment variables
 export DATA_DIR=/data
-export WEBUI_SECRET_KEY=assdfsdlfksjdfkldkjfsldkfjslfkajdsflskf
+export WEBUI_SECRET_KEY=$WEBUI_SECRET_KEY
 export OPENAI_API_BASE_URL=http://127.0.0.1:8000/v1
 export ENABLE_SIGNUP=true
+
+# CORS security configuration - restrict to our domain only
+export CORS_ALLOW_ORIGIN=https://${Hostname}
+export WEBUI_URL=https://${Hostname}
 
 # Fetch and apply custom environment variables from SSM Parameter Store
 if [[ "${CustomOpenWebuiConfigParameterArn}" != "" ]]; then
   echo "Fetching custom Open WebUI config from ${CustomOpenWebuiConfigParameterArn}..."
-  CUSTOM_OPENWEBUI_ENV=$(aws ssm get-parameter --name "${CustomOpenWebuiConfigParameterArn}" --with-decryption --output text --query Parameter.Value 2>/dev/null)
-  if [[ $? -eq 0 && -n "$CUSTOM_OPENWEBUI_ENV" ]]; then
+  CUSTOM_OPENWEBUI_ENV=\$(aws ssm get-parameter --name "${CustomOpenWebuiConfigParameterArn}" --with-decryption --output text --query Parameter.Value 2>/dev/null)
+  if [[ \$? -eq 0 && -n "\$CUSTOM_OPENWEBUI_ENV" ]]; then
     echo "Applying custom Open WebUI configuration..."
     while IFS= read -r line; do
       # Skip empty lines and comments
-      if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
+      if [[ -n "\$line" && ! "\$line" =~ ^[[:space:]]*# ]]; then
         # Extract variable name for logging (before = sign)
-        var_name="${line%%=*}"
-        echo "  Setting environment variable: $var_name"
-        export "$line"
+        var_name=\$(echo "\$line" | cut -d'=' -f1)
+        echo "  Setting environment variable: \$var_name"
+        export "\$line"
       fi
-    done <<< "$CUSTOM_OPENWEBUI_ENV"
+    done <<< "\$CUSTOM_OPENWEBUI_ENV"
     echo "Custom Open WebUI configuration applied successfully"
   else
     echo "No custom Open WebUI config found or error fetching parameter"

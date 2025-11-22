@@ -425,9 +425,74 @@ cat /proc/$(pgrep -f "open-webui serve")/environ | tr '\0' '\n' | grep -E 'WEBUI
 
 You can also check the CloudWatch Logs for the instance to see the configuration being fetched during startup.
 
-## Support
+## Secret Management
 
-For issues and questions:
-- Integration test failures: Check test/integration/test_models.py
-- API connectivity: Verify network and authentication configuration
-- Model performance: Ensure instance type matches model size requirements
+This pattern uses AWS Secrets Manager to securely manage system-generated secrets, specifically the `WEBUI_SECRET_KEY` required for Open WebUI authentication.
+
+### What is Managed
+
+**System Secrets (AWS Secrets Manager):**
+- `WEBUI_SECRET_KEY` - Automatically generated 32-byte hex string used for JWT authentication and session management
+  - Generated automatically on first deployment
+  - Persists across stack updates and instance replacements
+  - Required for maintaining user sessions across Open WebUI updates
+
+**User-Provided Secrets (SSM Parameter Store):**
+- API keys like `OPENAI_API_KEY`, `GOOGLE_API_KEY`, etc. should be added to the `CustomOpenWebuiConfigParameterArn` SSM Parameter (see [Custom Configuration](#custom-configuration) section)
+- SSM SecureString provides encryption at rest for these values
+
+### How It Works
+
+1. **First Deployment**: When the stack is deployed for the first time, a secret is created in AWS Secrets Manager with the stack name as a prefix (e.g., `oe-patterns-open-webui-dylan-secret-xxxxx`)
+
+2. **Instance Startup**: On each instance boot, the `check-secrets.py` script:
+   - Validates the secret exists
+   - Checks if `WEBUI_SECRET_KEY` is present
+   - If missing, generates a secure 32-byte hex string and updates the secret
+
+3. **Secret Retrieval**: The instance fetches the secret value using AWS Systems Manager Parameter Store's reference to Secrets Manager: `/aws/reference/secretsmanager/<secret-name>`
+
+4. **Application Use**: Open WebUI uses the `WEBUI_SECRET_KEY` for all authentication and session management
+
+### Secret Rotation
+
+To rotate the `WEBUI_SECRET_KEY` (which will invalidate all existing user sessions):
+
+1. Update the secret in AWS Secrets Manager:
+   ```bash
+   SECRET_ARN=$(aws cloudformation describe-stacks \
+     --stack-name oe-patterns-open-webui-dylan \
+     --query 'Stacks[0].Outputs[?OutputKey==`SecretArn`].OutputValue' \
+     --output text)
+
+   NEW_KEY=$(openssl rand -hex 32)
+
+   aws secretsmanager update-secret \
+     --secret-id "$SECRET_ARN" \
+     --secret-string "{\"WEBUI_SECRET_KEY\":\"$NEW_KEY\"}"
+   ```
+
+2. Restart the Open WebUI service (or terminate the instance to force replacement):
+   ```bash
+   # Via SSM Session Manager
+   aws ssm start-session --target INSTANCE_ID
+   systemctl restart open-webui
+   ```
+
+### Adding Other Secrets
+
+For user-provided secrets like API keys:
+- **Do NOT** add them to the Secrets Manager secret
+- **Instead**, add them to the SSM Parameter Store config as documented in [Custom Configuration](#custom-configuration)
+- Example:
+  ```bash
+  aws ssm put-parameter \
+    --name "/oe-patterns/open-webui/${USER}/openwebui-config" \
+    --type "SecureString" \
+    --value "WEBUI_NAME=My Instance
+  OPENAI_API_KEY=sk-...
+  GOOGLE_API_KEY=..." \
+    --overwrite
+  ```
+
+This keeps system-managed secrets (auto-generated) separate from user-provided configuration and secrets.

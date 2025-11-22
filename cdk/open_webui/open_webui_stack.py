@@ -16,6 +16,7 @@ from constructs import Construct
 from oe_patterns_cdk_common.alb import Alb
 from oe_patterns_cdk_common.asg import Asg
 from oe_patterns_cdk_common.dns import Dns
+from oe_patterns_cdk_common.secret import Secret
 from oe_patterns_cdk_common.vpc import Vpc
 
 if 'TEMPLATE_VERSION' in os.environ:
@@ -26,7 +27,8 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-062f8c7b5f728bb10" # ordinary-experts-patterns-open-webui-ac9f890-nvme-direct-download-20251116-0736 (Ubuntu 24.04 + Python 3.12 venv, model downloads directly to NVMe on boot)
+AMI_ID="ami-0339857e2a2828918" # ordinary-experts-patterns-open-webui-1610d0f-20251121-1113 (Ubuntu 24.04 + Python 3.12 venv + check-secrets.py pre-installed)
+NEXT_RELEASE_PREFIX="v100"
 
 class OpenWebuiStack(Stack):
 
@@ -97,11 +99,32 @@ class OpenWebuiStack(Stack):
 
         dns = Dns(self, "Dns")
 
+        # Secret for WEBUI_SECRET_KEY
+        secret = Secret(self, "Secret")
+
+        asg_update_secret_policy = aws_iam.CfnRole.PolicyProperty(
+            policy_document=aws_iam.PolicyDocument(
+                statements=[
+                    aws_iam.PolicyStatement(
+                        effect=aws_iam.Effect.ALLOW,
+                        actions=[
+                            "secretsmanager:DescribeSecret",
+                            "secretsmanager:GetSecretValue",
+                            "secretsmanager:UpdateSecret"
+                        ],
+                        resources=[secret.secret_arn()]
+                    )
+                ]
+            ),
+            policy_name="AllowUpdateSecret"
+        )
+
         with open("open_webui/user_data.sh") as f:
             user_data = f.read()
         asg = Asg(
             self,
             "Asg",
+            additional_iam_role_policies=[asg_update_secret_policy],
             allowed_instance_types = [
                 "g6.xlarge",
                 "g6.2xlarge",
@@ -115,6 +138,7 @@ class OpenWebuiStack(Stack):
                 "g6e.16xlarge"
             ],
             ami_id=AMI_ID,
+            ami_id_param_name_suffix=NEXT_RELEASE_PREFIX,
             create_and_update_timeout_minutes = 60,  # 1 hour - vLLM model download and load typically takes 10-15 minutes on NVMe
             default_instance_type = "g6.xlarge",
             singleton = True,
@@ -132,7 +156,8 @@ class OpenWebuiStack(Stack):
                         self.model_override_param.value_as_string,
                         self.model_param.value_as_string
                     )
-                )
+                ),
+                "SecretArn": secret.secret_arn()
             },
             vpc = vpc
         )
@@ -140,7 +165,7 @@ class OpenWebuiStack(Stack):
         # Update IAM policies via overrides to make them conditional
         # Only apply the Open WebUI config policy if the parameter ARN is provided
         asg.iam_instance_role.add_property_override(
-            "Policies.4",
+            "Policies.5",
             {
                 "Fn::If": [
                     "CustomOpenWebuiConfigParameterArnCondition",
@@ -166,7 +191,7 @@ class OpenWebuiStack(Stack):
 
         # Only apply the vLLM config policy if the parameter ARN is provided
         asg.iam_instance_role.add_property_override(
-            "Policies.5",
+            "Policies.6",
             {
                 "Fn::If": [
                     "CustomVllmConfigParameterArnCondition",
@@ -236,10 +261,9 @@ class OpenWebuiStack(Stack):
             "FirstUseInstructions",
             description="Instructions for getting started",
             value=Fn.sub(
-                "Stack deployment complete! Access Open WebUI at https://${Hostname}. "
+                "Access Open WebUI at https://${Hostname}. "
                 "Initial setup: 1) Create admin account at first login. "
                 "2) Navigate to Settings > Account to create an API key for aider/external tools. "
-                "Instance type: ${InstanceType}, Model: ${ModelName}. "
                 "For troubleshooting, check CloudWatch Logs or /var/log/vllm.log on the EC2 instance.",
                 {
                     "Hostname": dns.hostname(),
