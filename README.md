@@ -90,41 +90,6 @@ curl -H "Authorization: Bearer $OPENAI_API_KEY" \
 aider --model 'openai/your-model-name'
 ```
 
-### Model Testing Results
-
-Deployment time measurements with NVMe instance store (direct download on boot):
-
-| Model | Size | Instance | VRAM | Deploy Time | Status |
-|-------|------|----------|------|-------------|--------|
-| microsoft/Phi-4-mini-reasoning | 3.8B | g6e.xlarge | 48GB | ~14 min | ✓ Tested |
-| nvidia/OpenReasoning-Nemotron-7B | 7B | g6e.xlarge | 48GB | ~14 min | ✓ Tested |
-| Qwen/Qwen2.5-Coder-7B-Instruct | 7B | g6e.xlarge | 48GB | ~14.5 min | ✓ Tested |
-| Qwen/Qwen2.5-Coder-7B-Instruct | 7B | g6.xlarge | 24GB | ~15.5 min | ✓ Tested |
-| microsoft/phi-4 | 14B | g6e.xlarge | 48GB | ~16 min | ✓ Tested |
-| Qwen/Qwen2.5-Coder-14B-Instruct | 14B | g6.xlarge | 24GB | Failed | ✗ Insufficient VRAM |
-
-**Key Findings:**
-- 7B models work on both g6.xlarge (24GB) and g6e.xlarge (48GB) with similar performance
-- 14B+ models require g6.2xlarge or larger (48GB+ VRAM)
-- g6.xlarge is 57% cheaper ($0.805/hr vs $1.861/hr) and sufficient for 7B models
-- All successfully tested models load, respond to API requests, and work with Open WebUI interface
-
-### Complete Example
-
-```bash
-# Set up environment
-export OPENAI_API_KEY='sk-your-api-key-here'
-export OPENAI_API_BASE='https://open-webui.example.com/api'
-
-# Navigate to your project
-cd /path/to/your/project
-
-# Start aider with the Qwen 7B model
-aider --model 'openai/Qwen/Qwen2.5-Coder-7B-Instruct'
-
-# Aider will now use your deployed model for code assistance
-```
-
 ### Advanced Configuration
 
 You can create a `.aider.conf.yml` file in your project:
@@ -169,27 +134,6 @@ curl -H "Authorization: Bearer $OPENAI_API_KEY" \
 - Check that the model matches your instance type (7B → g6e.xlarge, 14B → g6e.2xlarge, etc.)
 - First request after model load will be slower
 
-## Integration Tests
-
-Run the integration test suite to verify model compatibility:
-
-```bash
-# Run all integration tests
-make test-integration-models
-
-# Test specific functionality
-docker compose run -w /code/test/integration --rm devenv \
-  pytest test_models.py::TestAiderCompatibility -v
-```
-
-Tests verify:
-- Model loading and availability
-- Basic and streaming completions
-- OpenAI API compatibility
-- Aider-style coding tasks
-- Multi-turn conversations
-- Performance for interactive use
-
 ## API Documentation
 
 ### Get Available Models
@@ -226,25 +170,6 @@ curl -X POST https://your-deployment-url/api/chat/completions \
     ],
     "stream": true
   }'
-```
-
-## Development
-
-### Build and Deploy
-
-```bash
-# Build the development environment
-make build
-
-# Deploy to AWS
-make deploy
-```
-
-### Run Tests
-
-```bash
-# Run integration tests
-make test-integration-models
 ```
 
 ## Model Configuration
