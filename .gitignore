@@ -5,6 +5,7 @@ __pycache__
 .pytest_cache
 .env
 *.egg-info
+venv/
 
 # CDK asset staging directory
 .cdk.staging
@@ -22,6 +23,12 @@ dist/*
 # packer manifest file
 manifest.json
 
+# ami build logs
+logs/
+
 # shared Makefiles/scripts
 common.mk
 scripts/common/*
+
+# aider
+.aider*

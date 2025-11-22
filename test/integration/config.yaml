@@ -1,0 +1,57 @@
+# Integration Test Configuration
+# Override values via environment variables: TEST_BASE_URL, TEST_STACK_NAME, etc.
+
+# Application-specific configuration
+application:
+  name: "Open WebUI"
+  health_endpoint: "/elb-check"
+  health_expected_response: "ok"  # Open WebUI health check returns JSON
+  vllm_health_endpoint: "/health"
+  vllm_models_endpoint: "/v1/models"
+
+# AWS Configuration
+aws:
+  region: "us-east-1"
+  stack_name: "oe-patterns-open-webui-dylan"
+
+# Test Configuration
+test:
+  timeout: 30
+  retry_attempts: 3
+  retry_delay: 2
+
+# Test URLs (can be overridden by environment variables)
+# TEST_BASE_URL environment variable takes precedence
+urls:
+  base_url: "https://open-webui-dylan.dev.patterns.ordinaryexperts.com"
+
+# Models to test
+models:
+  - name: "microsoft/phi-4"
+    min_instance_type: "g6e.xlarge"
+  - name: "microsoft/Phi-4-mini-reasoning"
+    min_instance_type: "g6e.xlarge"
+  - name: "nvidia/OpenReasoning-Nemotron-7B"
+    min_instance_type: "g6e.xlarge"
+  - name: "nvidia/OpenReasoning-Nemotron-14B"
+    min_instance_type: "g6e.2xlarge"
+  - name: "nvidia/OpenReasoning-Nemotron-32B"
+    min_instance_type: "g6e.4xlarge"
+  - name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+    min_instance_type: "g6e.xlarge"
+  - name: "Qwen/Qwen2.5-Coder-14B-Instruct"
+    min_instance_type: "g6e.2xlarge"
+  - name: "Qwen/Qwen2.5-Coder-32B-Instruct"
+    min_instance_type: "g6e.4xlarge"
+
+# Aider compatibility configuration
+aider:
+  test_prompt: "Write a hello world function in Python"
+  expected_response_keywords: ["def", "hello", "print"]
+  timeout: 60
+
+# Open WebUI API Configuration
+# These can be overridden via environment variables: OPENWEBUI_API_KEY
+api:
+  key: "sk-66f291579f314a3489f94a4d4c743999"  # Replace with your Open WebUI API key
+  base_path: "/api"  # Open WebUI API base path
