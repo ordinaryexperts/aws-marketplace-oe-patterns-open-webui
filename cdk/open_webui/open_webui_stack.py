@@ -27,7 +27,7 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-0339857e2a2828918" # ordinary-experts-patterns-open-webui-1610d0f-20251121-1113 (Ubuntu 24.04 + Python 3.12 venv + check-secrets.py pre-installed)
+AMI_ID="ami-0704c4b3463014b5c" # ordinary-experts-patterns-open-webui-1.0.0-20251128-0555
 NEXT_RELEASE_PREFIX="v100"
 
 class OpenWebuiStack(Stack):
@@ -131,11 +131,15 @@ class OpenWebuiStack(Stack):
                 "g6.4xlarge",
                 "g6.8xlarge",
                 "g6.16xlarge",
+                "g6.24xlarge",
+                "g6.48xlarge",
                 "g6e.xlarge",
                 "g6e.2xlarge",
                 "g6e.4xlarge",
                 "g6e.8xlarge",
-                "g6e.16xlarge"
+                "g6e.16xlarge",
+                "g6e.24xlarge",
+                "g6e.48xlarge"
             ],
             ami_id=AMI_ID,
             ami_id_param_name_suffix=NEXT_RELEASE_PREFIX,

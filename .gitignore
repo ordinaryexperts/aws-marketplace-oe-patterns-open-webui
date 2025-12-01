@@ -32,3 +32,6 @@ scripts/common/*
 
 # aider
 .aider*
+
+# marketplace changeset tracking
+.marketplace_changeset

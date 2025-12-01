@@ -1,0 +1,199 @@
+# AWS Marketplace Product Configuration
+# See docs/plans/2024-11-27-marketplace-catalog-api-design.md for details
+
+# Fill in after creating product in AWS Marketplace Management Portal
+product_id: "prod-f4aktsgc3hur2"
+product_code: "40hzzvn4xi78g22d17zx0722a"
+
+# IAM role in your prod account that allows AWS Marketplace to access your AMI
+# See design doc for role creation instructions
+ami_access_role_arn: "arn:aws:iam::879777583535:role/AWSMarketplaceAMIScanning"
+
+# Template publishing (uses existing S3 bucket)
+template_bucket: "ordinary-experts-aws-marketplace-pattern-artifacts"
+template_pattern: "open_webui"
+
+# AMI metadata
+operating_system: "UBUNTU"
+operating_system_version: "24.04"
+username: "ubuntu"
+
+# CloudFormation parameter pattern
+# Version 1.0.0 becomes AsgAmiIdv100
+ami_parameter_pattern: "AsgAmiIdv{version}"
+
+# CloudFormation delivery option details
+architecture_diagram_url: ""
+aws_calculator_url: ""
+
+# ============================================================================
+# Product Metadata (for reference - entered in AWS Marketplace Management Portal)
+# ============================================================================
+
+product_title: "Open WebUI on AWS by FOSSonCloud"
+
+logo_url: "https://ordinaryexperts.com/img/products/openwebui-pattern/openwebui-product-logo.png"
+
+short_description: |
+  Deploy Open WebUI with GPU-accelerated LLM inference on AWS. Run open-source models like Qwen, Phi-4, and Nemotron with vLLM on G6/G6e instances. OpenAI-compatible API included.
+
+long_description: |
+  Open WebUI on AWS provides a production-ready deployment of Open WebUI with vLLM for GPU-accelerated large language model inference.
+
+  KEY FEATURES
+
+  - Open WebUI Interface - Modern, ChatGPT-style web interface for interacting with LLMs
+  - vLLM Backend - High-performance inference server with OpenAI-compatible API
+  - Flexible Model Support - Pre-tested models including Qwen 2.5 Coder (7B/14B/32B), Microsoft Phi-4, and NVIDIA Nemotron reasoning models
+  - GPU-Optimized - Runs on NVIDIA L4 (G6) and L40S (G6e) instances for cost-optimized or performance-optimized deployments
+  - Secure by Default - HTTPS via ALB, private VPC networking, and AWS Secrets Manager for credential management
+  - Persistent Storage - EBS-backed data volume survives instance replacements
+  - Developer Ready - OpenAI-compatible API works with tools like aider, LangChain, and any OpenAI SDK
+
+  SUPPORTED MODELS
+
+  - Qwen/Qwen2.5-Coder-7B-Instruct (coding, recommended for development)
+  - Qwen/Qwen2.5-Coder-14B-Instruct, Qwen/Qwen2.5-Coder-32B-Instruct (larger coding models)
+  - microsoft/phi-4 (general purpose, 14B)
+  - microsoft/Phi-4-mini-reasoning (fast reasoning, 3.8B)
+  - nvidia/OpenReasoning-Nemotron-7B/14B/32B (reasoning models)
+  - Custom models via ModelOverride parameter
+
+  INFRASTRUCTURE
+
+  CloudFormation deploys: VPC (or uses existing), Application Load Balancer with ACM certificate, Auto Scaling Group with GPU instance, Route53 DNS record, CloudWatch Logs, EBS persistent storage with automated backups, and AWS Secrets Manager integration.
+
+  IAM PERMISSIONS
+
+  EC2 Instance Role permissions:
+  - AmazonSSMManagedInstanceCore - Systems Manager Session Manager access
+  - CloudWatch Logs/Metrics - Stream logs and publish custom metrics
+  - EC2 Volume Operations - Attach persistent EBS data volume
+  - Secrets Manager - Manage application secrets (WEBUI_SECRET_KEY)
+  - SSM Parameter Store - Read optional custom configuration
+
+  Lambda Role (subnet-to-AZ mapping):
+  - AWSLambdaBasicExecutionRole - CloudWatch Logs access
+  - ec2:DescribeSubnets - Determine AZ for EBS volume placement
+
+  All IAM roles follow least-privilege principles.
+
+  EXTERNAL CONNECTIONS
+
+  This product connects to external services during deployment and operation:
+  - Hugging Face (huggingface.co): Downloads the selected LLM model on first instance boot. Model sizes range from 4GB to 60GB depending on selection.
+  - No customer data is transmitted to external services.
+  - All inference is performed locally on the EC2 instance.
+
+  GETTING STARTED
+
+  1. Launch the CloudFormation stack with your DNS and certificate details
+  2. Wait for deployment (model download takes 10-60 minutes depending on size)
+  3. Access Open WebUI at your configured hostname
+  4. Create your admin account on first login
+  5. Generate API keys in Settings > Account for external tool integration
+
+highlights:
+  - "GPU-Accelerated Inference - Run LLMs on NVIDIA L4/L40S GPUs with vLLM for production-grade throughput and low latency"
+  - "Open WebUI Interface - Modern chat interface with conversation history, model switching, user management, and API key generation"
+  - "OpenAI-Compatible API - Integrate with existing tools like aider, LangChain, Continue.dev, or any OpenAI SDK client"
+  - "Flexible Model Selection - Choose from pre-tested coding, reasoning, and general-purpose open-source models, or bring your own"
+  - "Production Ready - HTTPS, persistent EBS storage with automated backups, CloudWatch logging, and Secrets Manager integration"
+
+support_description: |
+  Support provided by Ordinary Experts
+
+  FREE ONBOARDING: We offer a complimentary one-hour onboarding session via Zoom to help you get started with your deployment, configure your environment, and answer any questions.
+
+  ONGOING SUPPORT: After onboarding, support is available via email. We respond within 2 business days. For urgent production issues, include "URGENT" in your email subject.
+
+  Documentation: https://github.com/ordinaryexperts/aws-marketplace-oe-patterns-open-webui
+  Issues & Bug Reports: https://github.com/ordinaryexperts/aws-marketplace-oe-patterns-open-webui/issues
+  Email: support@ordinaryexperts.com
+
+  Troubleshooting resources:
+  - CloudWatch Logs for application and system logs
+  - /var/log/vllm.log and /var/log/open-webui.log on the EC2 instance
+  - AWS Systems Manager Session Manager for secure shell access
+
+# ============================================================================
+# Delivery Option Metadata
+# ============================================================================
+
+delivery_option:
+  title: "Open WebUI with vLLM on GPU"
+
+  short_description: |
+    Deploy Open WebUI with vLLM for GPU-accelerated LLM inference. Includes VPC, ALB, Auto Scaling Group, Route 53 DNS, CloudWatch logging, and persistent EBS storage with automated backups.
+
+  long_description: |
+    This CloudFormation template deploys a production-ready Open WebUI environment with vLLM backend for GPU-accelerated large language model inference.
+
+    WHAT'S DEPLOYED
+
+    - VPC with public and private subnets (or use your existing VPC)
+    - Application Load Balancer with HTTPS (requires ACM certificate)
+    - Auto Scaling Group with GPU-enabled EC2 instance (G6/G6e family)
+    - Route 53 DNS record pointing to the load balancer
+    - Persistent EBS data volume with automated daily backups via AWS Backup
+    - CloudWatch Log Groups for application and system logs
+    - AWS Secrets Manager secret for secure credential storage
+    - IAM roles with least-privilege permissions
+
+    FEATURES
+
+    - Pre-tested open-source models: Qwen 2.5 Coder, Microsoft Phi-4, NVIDIA Nemotron
+    - OpenAI-compatible API for integration with tools like aider, LangChain, and Continue.dev
+    - Custom model support via ModelOverride parameter
+    - Optional custom configuration via SSM Parameter Store
+    - Systems Manager Session Manager access (no SSH keys required)
+
+    REQUIREMENTS
+
+    - Route 53 hosted zone for DNS
+    - ACM certificate for HTTPS
+    - Sufficient service quota for GPU instances in your region
+
+    INSTANCE SIZING
+
+    - g6.xlarge (default): 24GB VRAM - 7B models
+    - g6e.xlarge / g6.2xlarge: 48GB VRAM - 14B models
+    - g6e.2xlarge / g6.4xlarge: 96GB VRAM - 32B models
+
+    EXTERNAL CONNECTIONS
+
+    This product connects to Hugging Face (huggingface.co) to download the selected LLM model on first instance boot. Model sizes range from 4GB to 60GB. No customer data is transmitted. All inference is performed locally.
+
+    Deployment takes 15-60 minutes depending on model size due to model download and loading.
+
+  recommended_instance_type: "g6.xlarge"
+
+  usage_instructions: |
+    Full documentation: https://github.com/ordinaryexperts/aws-marketplace-oe-patterns-open-webui
+
+    QUICK START
+
+    1. Launch the CloudFormation stack with required parameters:
+       - DnsHostname: Your hostname (e.g., ai.example.com)
+       - DnsRoute53HostedZoneName: Your Route 53 hosted zone (e.g., example.com)
+       - AlbCertificateArn: ARN of an ACM certificate for HTTPS
+       - AlbIngressCidr: IP range allowed to access (0.0.0.0/0 for public)
+
+    2. Wait 15-60 minutes for deployment to complete
+
+    3. Access Open WebUI at https://your-hostname
+
+    4. Create your admin account on first login
+
+    5. Generate API keys in Settings > Account for external tools
+
+    USING WITH AIDER OR OTHER OPENAI CLIENTS
+
+    export OPENAI_API_KEY='your-open-webui-api-key'
+    export OPENAI_API_BASE='https://your-hostname/api'
+    aider --model 'openai/Qwen/Qwen2.5-Coder-7B-Instruct'
+
+    SUPPORT
+
+    Free 1-hour onboarding session via Zoom included.
+    Email support@ordinaryexperts.com to schedule.

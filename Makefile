@@ -8,6 +8,11 @@ help:
 	@echo "  test-integration-models - Run integration tests for model compatibility"
 	@echo "  deploy                  - Deploy the CDK stack to AWS"
 	@echo ""
+	@echo "AWS Marketplace targets:"
+	@echo "  marketplace-validate    - Check product is ready for version submission"
+	@echo "  marketplace-submit      - Submit a new version (AMI_ID=xxx TEMPLATE_VERSION=x.y.z)"
+	@echo "  marketplace-status      - Check submission status"
+	@echo ""
 	@echo "Targets from common.mk:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' common.mk 2>/dev/null | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-23s - %s\n", $$1, $$2}' || echo "  (run 'make update-common' first to see common targets)"
 
@@ -33,3 +38,15 @@ deploy: build clean-cdk
 	--parameters DnsRoute53HostedZoneName=dev.patterns.ordinaryexperts.com \
 	--parameters CustomVllmConfigParameterArn=arn:aws:ssm:us-east-1:992593896645:parameter/oe-patterns/open-webui/${USER}/vllm-config \
 	--parameters CustomOpenWebuiConfigParameterArn=arn:aws:ssm:us-east-1:992593896645:parameter/oe-patterns/open-webui/${USER}/openwebui-config
+
+# AWS Marketplace Catalog API targets
+marketplace-validate: build
+	docker compose run -w /code --rm devenv python3 scripts/marketplace.py validate
+
+marketplace-submit: build
+	docker compose run -w /code --rm devenv python3 scripts/marketplace.py submit \
+		--ami-id $(AMI_ID) \
+		--version $(TEMPLATE_VERSION)
+
+marketplace-status: build
+	docker compose run -w /code --rm devenv python3 scripts/marketplace.py status $(if $(CHANGESET_ID),--changeset-id $(CHANGESET_ID),)
