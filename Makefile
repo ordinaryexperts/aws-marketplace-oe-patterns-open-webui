@@ -8,13 +8,18 @@ help:
 	@echo "  test-integration-models - Run integration tests for model compatibility"
 	@echo "  deploy                  - Deploy the CDK stack to AWS"
 	@echo ""
+	@echo "AWS Marketplace targets (from common.mk):"
+	@echo "  marketplace-validate    - Check product is ready for version submission"
+	@echo "  marketplace-submit      - Submit a new version (AMI_ID=xxx TEMPLATE_VERSION=x.y.z)"
+	@echo "  marketplace-status      - Check submission status"
+	@echo ""
 	@echo "Targets from common.mk:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' common.mk 2>/dev/null | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-23s - %s\n", $$1, $$2}' || echo "  (run 'make update-common' first to see common targets)"
 
 -include common.mk
 
 update-common:
-	wget -O common.mk https://raw.githubusercontent.com/ordinaryexperts/aws-marketplace-utilities/1.7.2/common.mk
+	wget -O common.mk https://raw.githubusercontent.com/ordinaryexperts/aws-marketplace-utilities/main/common.mk
 
 # Open WebUI specific integration test target for model testing
 test-integration-models: build
@@ -25,7 +30,7 @@ deploy: build clean-cdk
 	--require-approval never \
 	--parameters AlbCertificateArn=arn:aws:acm:us-east-1:992593896645:certificate/943928d7-bfce-469c-b1bf-11561024580e \
 	--parameters AlbIngressCidr=76.88.34.94/32 \
-	--parameters AsgAmiIdv100=ami-0339857e2a2828918 \
+	--parameters AsgAmiIdv100=ami-0704c4b3463014b5c \
 	--parameters AsgReprovisionString=20251121.6 \
 	--parameters AsgInstanceType=g6.xlarge \
 	--parameters Model=Qwen/Qwen2.5-Coder-7B-Instruct \
