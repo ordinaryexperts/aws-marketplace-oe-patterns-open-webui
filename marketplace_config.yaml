@@ -22,6 +22,16 @@ username: "ubuntu"
 # Version 1.0.0 becomes AsgAmiIdv100
 ami_parameter_pattern: "AsgAmiIdv{version}"
 
+# AMI delivery option settings
+recommended_instance_type: "g6.xlarge"
+usage_instructions: "See the GitHub repository for documentation: https://github.com/ordinaryexperts/aws-marketplace-oe-patterns-open-webui"
+security_groups:
+  - IpProtocol: "tcp"
+    FromPort: 443
+    ToPort: 443
+    IpRanges:
+      - "0.0.0.0/0"
+
 # CloudFormation delivery option details
 architecture_diagram_url: ""
 aws_calculator_url: ""

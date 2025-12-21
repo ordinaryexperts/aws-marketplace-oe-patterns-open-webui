@@ -290,7 +290,8 @@ class OpenWebuiStack(Stack):
                 },
                 "Parameters": [
                     self.model_param.logical_id,
-                    self.model_override_param.logical_id
+                    self.model_override_param.logical_id,
+                    secret.secret_arn_param.logical_id
                 ]
             },
             {
@@ -319,6 +320,9 @@ class OpenWebuiStack(Stack):
                     },
                     self.model_override_param.logical_id: {
                         "default": "Model Override"
+                    },
+                    secret.secret_arn_param.logical_id: {
+                        "default": "Existing Secrets Manager Secret ARN"
                     },
                     self.custom_open_webui_config_parameter_arn_param.logical_id: {
                         "default": "Custom Open WebUI Config SSM Parameter ARN"
