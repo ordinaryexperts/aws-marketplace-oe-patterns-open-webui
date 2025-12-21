@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# aws cloudwatch
-sed -i 's/ASG_APP_LOG_GROUP_PLACEHOLDER/${AsgAppLogGroup}/g' /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-sed -i 's/ASG_SYSTEM_LOG_GROUP_PLACEHOLDER/${AsgSystemLogGroup}/g' /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-systemctl enable amazon-cloudwatch-agent
-systemctl start amazon-cloudwatch-agent
-
 mkdir -p /opt/oe/patterns
 
+# Check and fetch secrets from Secrets Manager (check-secrets.py is pre-installed in AMI)
+/root/check-secrets.py ${AWS::Region} ${SecretArn}
+
+SECRET_NAME=$(aws secretsmanager describe-secret --secret-id ${SecretArn} --region ${AWS::Region} | jq -r .Name)
+aws ssm get-parameter \
+    --name "/aws/reference/secretsmanager/$SECRET_NAME" \
+    --with-decryption \
+    --query Parameter.Value \
+    --region ${AWS::Region} \
+| jq -r . > /opt/oe/patterns/secrets.json
+
+WEBUI_SECRET_KEY=$(cat /opt/oe/patterns/secrets.json | jq -r .WEBUI_SECRET_KEY)
 
 # nginx
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
@@ -53,33 +59,69 @@ ln -s /etc/nginx/sites-available/openwebui /etc/nginx/sites-enabled/openwebui
 service nginx stop
 service nginx start
 
-# VLLM
+# NVMe Instance Store Setup
+# Mount NVMe instance store for high-performance model caching
+echo "Setting up NVMe instance store for model caching..."
 
-# custom vllm config
-CUSTOM_CONFIG="// no custom config defined"
-if [[ "${CustomVllmConfigParameterArn}" != "" ]]; then
-    CUSTOM_CONFIG_TITLE="// custom config fetched from ${CustomVllmConfigParameterArn}"
-    CUSTOM_CONFIG_VALUE=$(aws ssm get-parameter --name "${CustomVllmConfigParameterArn}" --with-decryption --output text --query Parameter.Value)
-    CUSTOM_CONFIG=$(printf "%s\n\n%s" "$CUSTOM_CONFIG_TITLE" "$CUSTOM_CONFIG_VALUE")
+# Detect NVMe instance store device (typically nvme1n1 on g6e instances)
+# nvme0n1 is the root volume, nvme1n1 is the instance store
+NVME_DEVICE="/dev/nvme1n1"
+
+if [ -b "$NVME_DEVICE" ]; then
+    echo "Found NVMe instance store: $NVME_DEVICE"
+
+    # Format the device (this is ephemeral storage, safe to format on each boot)
+    mkfs.ext4 -F "$NVME_DEVICE"
+
+    # Create mount point and mount
+    mkdir -p /mnt/instance-store
+    mount "$NVME_DEVICE" /mnt/instance-store
+    chmod 777 /mnt/instance-store
+
+    # Create Hugging Face cache directory on instance store
+    mkdir -p /mnt/instance-store/huggingface
+    chmod 777 /mnt/instance-store/huggingface
+
+    # Create symlink from default cache location to instance store
+    # This ensures all Hugging Face downloads go directly to NVMe
+    mkdir -p /root/.cache
+    ln -s /mnt/instance-store/huggingface /root/.cache/huggingface
+
+    echo "NVMe instance store configured at /mnt/instance-store"
+    echo "Hugging Face cache will use: /root/.cache/huggingface -> /mnt/instance-store/huggingface"
+else
+    echo "WARNING: No NVMe instance store found at $NVME_DEVICE"
+    echo "Model will be downloaded to EBS (slower performance)"
+    mkdir -p /root/.cache/huggingface
 fi
 
-cat <<'EOF' > /root/start-vllm.sh
+# VLLM
+
+# custom vllm config - fetch additional CLI arguments from SSM Parameter Store
+CUSTOM_VLLM_ARGS=""
+if [[ "${CustomVllmConfigParameterArn}" != "" ]]; then
+    echo "Fetching custom vLLM config from ${CustomVllmConfigParameterArn}..."
+    CUSTOM_VLLM_ARGS=$(aws ssm get-parameter --name "${CustomVllmConfigParameterArn}" --with-decryption --output text --query Parameter.Value)
+    echo "Custom vLLM args: $CUSTOM_VLLM_ARGS"
+fi
+
+cat <<EOF > /root/start-vllm.sh
 #!/bin/bash
 
-# Ensure Conda is properly initialized for this session
-eval "$(conda shell.bash hook)"
-
-# Activate the open-webui environment
-conda activate open-webui || { echo "Failed to activate Conda environment 'open-webui'"; exit 1; }
+# Activate the Python virtual environment
+source /opt/open-webui-venv/bin/activate || { echo "Failed to activate venv '/opt/open-webui-venv'"; exit 1; }
 
 # Ensure vllm is installed
 if ! command -v vllm &> /dev/null; then
-    echo "vllm not found. Make sure it is installed in the 'open-webui' environment."
+    echo "vllm not found. Make sure it is installed in the venv."
     exit 1
 fi
 
-# Start vllm
-vllm serve ${ModelName}
+# Start vllm with GPU memory utilization flag
+# vLLM will automatically download the model to /root/.cache/huggingface (symlinked to NVMe)
+# on first startup. This typically takes 5-10 minutes for ~29GB models when downloading to NVMe.
+# Model loading from NVMe takes ~3 minutes after download completes.
+vllm serve ${ModelName} --gpu-memory-utilization 0.95 $CUSTOM_VLLM_ARGS
 EOF
 chmod 700 /root/start-vllm.sh
 
@@ -97,7 +139,7 @@ Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/vllm.log
 StandardError=append:/var/log/vllm.log
-Environment="PATH=/root/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/opt/open-webui-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
 WantedBy=multi-user.target
@@ -116,25 +158,52 @@ cat <<EOF > /etc/logrotate.d/vllm
 }
 EOF
 
-cat <<'EOF' > /root/start-open-webui.sh
+# Open WebUI
+
+cat <<EOF > /root/start-open-webui.sh
 #!/bin/bash
 
-# Ensure Conda is properly initialized for this session
-eval "$(conda shell.bash hook)"
-
-# Activate the open-webui environment
-conda activate open-webui || { echo "Failed to activate Conda environment 'open-webui'"; exit 1; }
+# Activate the Python virtual environment
+source /opt/open-webui-venv/bin/activate || { echo "Failed to activate venv '/opt/open-webui-venv'"; exit 1; }
 
 # Ensure open-webui is installed
 if ! command -v open-webui &> /dev/null; then
-    echo "open-webui not found. Make sure it is installed in the 'open-webui' environment."
+    echo "open-webui not found. Make sure it is installed in the venv."
     exit 1
 fi
 
 # Set up environment variables
 export DATA_DIR=/data
-export WEBUI_SECRET_KEY=assdfsdlfksjdfkldkjfsldkfjslfkajdsflskf
+export WEBUI_SECRET_KEY=$WEBUI_SECRET_KEY
 export OPENAI_API_BASE_URL=http://127.0.0.1:8000/v1
+export ENABLE_SIGNUP=true
+
+# CORS security configuration - restrict to our domain only
+export CORS_ALLOW_ORIGIN=https://${Hostname}
+export WEBUI_URL=https://${Hostname}
+
+# Fetch and apply custom environment variables from SSM Parameter Store
+if [[ "${CustomOpenWebuiConfigParameterArn}" != "" ]]; then
+  echo "Fetching custom Open WebUI config from ${CustomOpenWebuiConfigParameterArn}..."
+  CUSTOM_OPENWEBUI_ENV=\$(aws ssm get-parameter --name "${CustomOpenWebuiConfigParameterArn}" --with-decryption --output text --query Parameter.Value 2>/dev/null)
+  if [[ \$? -eq 0 && -n "\$CUSTOM_OPENWEBUI_ENV" ]]; then
+    echo "Applying custom Open WebUI configuration..."
+    while IFS= read -r line; do
+      # Skip empty lines and comments
+      if [[ -n "\$line" && ! "\$line" =~ ^[[:space:]]*# ]]; then
+        # Extract variable name for logging (before = sign)
+        var_name=\$(echo "\$line" | cut -d'=' -f1)
+        echo "  Setting environment variable: \$var_name"
+        export "\$line"
+      fi
+    done <<< "\$CUSTOM_OPENWEBUI_ENV"
+    echo "Custom Open WebUI configuration applied successfully"
+  else
+    echo "No custom Open WebUI config found or error fetching parameter"
+  fi
+else
+  echo "No custom Open WebUI config parameter ARN provided"
+fi
 
 # Start Open WebUI
 open-webui serve
@@ -155,7 +224,7 @@ Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/open-webui.log
 StandardError=append:/var/log/open-webui.log
-Environment="PATH=/root/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/opt/open-webui-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
 WantedBy=multi-user.target
@@ -208,17 +277,18 @@ else
     success=1  # Indicate failure
 fi
 
-# vllm
+# Wait for vLLM to be ready before signaling CloudFormation
+echo "Waiting for vLLM model loading to complete (this may take 60+ minutes)..."
 URL="http://127.0.0.1:8000/v1/models"
 TIMEOUT=10
-MAX_RETRIES=180
+MAX_RETRIES=360
 
-# Only attempt wget if the service start was successful
+# Only attempt wget if the Open WebUI service start was successful
 if [ $success -eq 0 ]; then
     for ((i=1; i<=MAX_RETRIES; i++)); do
         wget --no-check-certificate --timeout=$TIMEOUT --tries=1 "$URL" >/dev/null 2>&1
         if [ $? -eq 0 ]; then
-            echo "Successfully reached $URL"
+            echo "Successfully reached $URL - vLLM is ready!"
             success=0  # Indicate success
             break
         fi
@@ -227,12 +297,14 @@ if [ $success -eq 0 ]; then
     done
 
     if [ $i -gt $MAX_RETRIES ]; then
-        echo "Failed to reach $URL after $MAX_RETRIES attempts."
+        echo "Failed to reach $URL after $MAX_RETRIES attempts - vLLM failed to load"
         success=1  # Indicate failure
     fi
 else
-    echo "Service failed to start. Skipping URL checks."
+    echo "Skipping vLLM checks since Open WebUI failed to start."
     success=1  # Indicate failure
 fi
 
+# Signal CloudFormation after vLLM is ready
+echo "Signaling CloudFormation with status (success=$success)"
 cfn-signal --exit-code $success --stack ${AWS::StackName} --resource Asg --region ${AWS::Region}

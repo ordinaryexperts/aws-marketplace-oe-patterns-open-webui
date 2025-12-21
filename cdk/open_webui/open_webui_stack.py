@@ -2,9 +2,11 @@ import os
 import subprocess
 from aws_cdk import (
     Aws,
+    aws_iam,
     CfnCondition,
     CfnOutput,
     CfnParameter,
+    CfnRule,
     Fn,
     Stack,
     Token
@@ -14,6 +16,7 @@ from constructs import Construct
 from oe_patterns_cdk_common.alb import Alb
 from oe_patterns_cdk_common.asg import Asg
 from oe_patterns_cdk_common.dns import Dns
+from oe_patterns_cdk_common.secret import Secret
 from oe_patterns_cdk_common.vpc import Vpc
 
 if 'TEMPLATE_VERSION' in os.environ:
@@ -24,7 +27,8 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-0ab715b1314a24cd6" # ordinary-experts-patterns-open-webui-f0db43f-20250615-0346
+AMI_ID="ami-0704c4b3463014b5c" # ordinary-experts-patterns-open-webui-1.0.0-20251128-0555
+NEXT_RELEASE_PREFIX="v100"
 
 class OpenWebuiStack(Stack):
 
@@ -51,7 +55,13 @@ class OpenWebuiStack(Stack):
             default="Qwen/Qwen2.5-Coder-7B-Instruct",
             allowed_values=[
                 "microsoft/phi-4",
-                "Qwen/Qwen2.5-Coder-7B-Instruct"
+                "microsoft/Phi-4-mini-reasoning",
+                "nvidia/OpenReasoning-Nemotron-7B",
+                "nvidia/OpenReasoning-Nemotron-14B",
+                "nvidia/OpenReasoning-Nemotron-32B",
+                "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "Qwen/Qwen2.5-Coder-14B-Instruct",
+                "Qwen/Qwen2.5-Coder-32B-Instruct"
             ],
             description="The LLM to load. These models have been tested with this configuration. To try a different model, see the ModelOverride parameter"
         )
@@ -69,6 +79,18 @@ class OpenWebuiStack(Stack):
             expression=Fn.condition_not(Fn.condition_equals(self.model_override_param.value, ""))
         )
 
+        self.custom_open_webui_config_parameter_arn_condition = CfnCondition(
+            self,
+            "CustomOpenWebuiConfigParameterArnCondition",
+            expression=Fn.condition_not(Fn.condition_equals(self.custom_open_webui_config_parameter_arn_param.value, ""))
+        )
+
+        self.custom_vllm_config_parameter_arn_condition = CfnCondition(
+            self,
+            "CustomVllmConfigParameterArnCondition",
+            expression=Fn.condition_not(Fn.condition_equals(self.custom_vllm_config_parameter_arn_param.value, ""))
+        )
+
         # vpc
         vpc = Vpc(
             self,
@@ -77,27 +99,58 @@ class OpenWebuiStack(Stack):
 
         dns = Dns(self, "Dns")
 
+        # Secret for WEBUI_SECRET_KEY
+        secret = Secret(self, "Secret")
+
+        asg_update_secret_policy = aws_iam.CfnRole.PolicyProperty(
+            policy_document=aws_iam.PolicyDocument(
+                statements=[
+                    aws_iam.PolicyStatement(
+                        effect=aws_iam.Effect.ALLOW,
+                        actions=[
+                            "secretsmanager:DescribeSecret",
+                            "secretsmanager:GetSecretValue",
+                            "secretsmanager:UpdateSecret"
+                        ],
+                        resources=[secret.secret_arn()]
+                    )
+                ]
+            ),
+            policy_name="AllowUpdateSecret"
+        )
+
         with open("open_webui/user_data.sh") as f:
             user_data = f.read()
         asg = Asg(
             self,
             "Asg",
+            additional_iam_role_policies=[asg_update_secret_policy],
             allowed_instance_types = [
+                "g6.xlarge",
+                "g6.2xlarge",
+                "g6.4xlarge",
+                "g6.8xlarge",
+                "g6.16xlarge",
+                "g6.24xlarge",
+                "g6.48xlarge",
                 "g6e.xlarge",
                 "g6e.2xlarge",
                 "g6e.4xlarge",
                 "g6e.8xlarge",
-                "g6e.16xlarge"
+                "g6e.16xlarge",
+                "g6e.24xlarge",
+                "g6e.48xlarge"
             ],
             ami_id=AMI_ID,
-            create_and_update_timeout_minutes = 60,
-            default_instance_type = "g6e.xlarge",
+            ami_id_param_name_suffix=NEXT_RELEASE_PREFIX,
+            create_and_update_timeout_minutes = 60,  # 1 hour - vLLM model download and load typically takes 10-15 minutes on NVMe
+            default_instance_type = "g6.xlarge",
             singleton = True,
             use_data_volume = True,
             user_data_contents = user_data,
             user_data_variables={
-                "CustomOpenWebuiConfigParameterArn": self.custom_vllm_config_parameter_arn_param.value_as_string,
-                "CustomVllmConfigParameterArn": self.custom_open_webui_config_parameter_arn_param.value_as_string,
+                "CustomOpenWebuiConfigParameterArn": self.custom_open_webui_config_parameter_arn_param.value_as_string,
+                "CustomVllmConfigParameterArn": self.custom_vllm_config_parameter_arn_param.value_as_string,
                 "HostedZoneName": dns.route_53_hosted_zone_name_param.value_as_string,
                 "Hostname": dns.hostname(),
                 "InstanceSecretName": Aws.STACK_NAME + "/instance/credentials",
@@ -107,9 +160,63 @@ class OpenWebuiStack(Stack):
                         self.model_override_param.value_as_string,
                         self.model_param.value_as_string
                     )
-                )
+                ),
+                "SecretArn": secret.secret_arn()
             },
             vpc = vpc
+        )
+
+        # Update IAM policies via overrides to make them conditional
+        # Only apply the Open WebUI config policy if the parameter ARN is provided
+        asg.iam_instance_role.add_property_override(
+            "Policies.5",
+            {
+                "Fn::If": [
+                    "CustomOpenWebuiConfigParameterArnCondition",
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": "ssm:GetParameter",
+                                    "Effect": "Allow",
+                                    "Resource": {
+                                        "Ref": "CustomOpenWebuiConfigParameterArn"
+                                    }
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "AllowReadOpenWebuiConfigParameter"
+                    },
+                    { "Ref": "AWS::NoValue" }
+                ]
+            }
+        )
+
+        # Only apply the vLLM config policy if the parameter ARN is provided
+        asg.iam_instance_role.add_property_override(
+            "Policies.6",
+            {
+                "Fn::If": [
+                    "CustomVllmConfigParameterArnCondition",
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": "ssm:GetParameter",
+                                    "Effect": "Allow",
+                                    "Resource": {
+                                        "Ref": "CustomVllmConfigParameterArn"
+                                    }
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "AllowReadVllmConfigParameter"
+                    },
+                    { "Ref": "AWS::NoValue" }
+                ]
+            }
         )
 
         alb = Alb(
@@ -122,12 +229,58 @@ class OpenWebuiStack(Stack):
         asg.asg.target_group_arns = [ alb.target_group.ref ]
 
         dns.add_alb(alb)
-        
+
+        # CloudFormation Rules for fail-fast validation of model/instance compatibility
+        # Rule 1: Prevent 14B+ models on instances with < 48GB VRAM (only g6.xlarge with 24GB)
+        # Note: g6e.xlarge has 48GB VRAM and works with 14B models
+        # Tested: phi-4 and Qwen 14B both fail on g6.xlarge (24GB VRAM)
+        CfnRule(
+            self,
+            "Model14BRequiresLargerInstance",
+            assertions=[
+                {
+                    "assert": Fn.condition_or(
+                        # Allow if NOT using a 14B/32B model...
+                        Fn.condition_not(
+                            Fn.condition_or(
+                                Fn.condition_equals(self.model_param.value_as_string, "microsoft/phi-4"),
+                                Fn.condition_equals(self.model_param.value_as_string, "nvidia/OpenReasoning-Nemotron-14B"),
+                                Fn.condition_equals(self.model_param.value_as_string, "nvidia/OpenReasoning-Nemotron-32B"),
+                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen2.5-Coder-14B-Instruct"),
+                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen2.5-Coder-32B-Instruct")
+                            )
+                        ),
+                        # OR allow if instance is NOT g6.xlarge (g6.xlarge has only 24GB VRAM)
+                        Fn.condition_not(
+                            Fn.condition_equals(asg.instance_type_param.value_as_string, "g6.xlarge")
+                        )
+                    ),
+                    "assertDescription": "14B and 32B models require at least 48GB VRAM. The g6.xlarge instance only has 24GB VRAM. Please select g6e.xlarge (48GB) or larger: g6.2xlarge, g6.4xlarge, g6.8xlarge, g6.16xlarge, g6e.2xlarge, g6e.4xlarge, g6e.8xlarge, or g6e.16xlarge."
+                }
+            ]
+        )
+
         CfnOutput(
             self,
             "FirstUseInstructions",
             description="Instructions for getting started",
-            value="TODO"
+            value=Fn.sub(
+                "Access Open WebUI at https://${Hostname}. "
+                "Initial setup: 1) Create admin account at first login. "
+                "2) Navigate to Settings > Account to create an API key for aider/external tools. "
+                "For troubleshooting, check CloudWatch Logs or /var/log/vllm.log on the EC2 instance.",
+                {
+                    "Hostname": dns.hostname(),
+                    "InstanceType": asg.instance_type_param.value_as_string,
+                    "ModelName": Token.as_string(
+                        Fn.condition_if(
+                            self.model_override_exists_condition.logical_id,
+                            self.model_override_param.value_as_string,
+                            self.model_param.value_as_string
+                        )
+                    )
+                }
+            )
         )
 
         parameter_groups = [
@@ -137,7 +290,17 @@ class OpenWebuiStack(Stack):
                 },
                 "Parameters": [
                     self.model_param.logical_id,
-                    self.model_override_param.logical_id
+                    self.model_override_param.logical_id,
+                    secret.secret_arn_param.logical_id
+                ]
+            },
+            {
+                "Label": {
+                    "default": "Advanced Config"
+                },
+                "Parameters": [
+                    self.custom_open_webui_config_parameter_arn_param.logical_id,
+                    self.custom_vllm_config_parameter_arn_param.logical_id
                 ]
             }
         ]
@@ -157,6 +320,15 @@ class OpenWebuiStack(Stack):
                     },
                     self.model_override_param.logical_id: {
                         "default": "Model Override"
+                    },
+                    secret.secret_arn_param.logical_id: {
+                        "default": "Existing Secrets Manager Secret ARN"
+                    },
+                    self.custom_open_webui_config_parameter_arn_param.logical_id: {
+                        "default": "Custom Open WebUI Config SSM Parameter ARN"
+                    },
+                    self.custom_vllm_config_parameter_arn_param.logical_id: {
+                        "default": "Custom vLLM Config SSM Parameter ARN"
                     },
                     **alb.metadata_parameter_labels(),
                     **asg.metadata_parameter_labels(),

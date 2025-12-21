@@ -3,13 +3,13 @@
     "aws_access_key": "{{env `AWS_ACCESS_KEY`}}",
     "aws_secret_key": "{{env `AWS_SECRET_KEY`}}",
     "version": "{{env `VERSION`}}",
-    "ami-comment": "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20230208 - ami-0557a15b87f6559cf"
+    "ami-comment": "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-20251113 - ami-09c63204a7d809e8f"
   },
   "builders": [
     {
       "type": "amazon-ebs",
       "region": "us-east-1",
-      "source_ami": "ami-0557a15b87f6559cf",
+      "source_ami": "ami-09c63204a7d809e8f",
       "instance_type": "g6e.2xlarge",
       "ssh_username": "ubuntu",
       "aws_polling": {
@@ -29,7 +29,7 @@
     {
       "type": "shell",
       "execute_command": "{{.Vars}} sudo -H -S -E bash '{{.Path}}'",
-      "script": "./packer/ubuntu_2204_appinstall.sh"
+      "script": "./packer/ubuntu_2404_appinstall.sh"
     }
   ],
   "post-processors": [
