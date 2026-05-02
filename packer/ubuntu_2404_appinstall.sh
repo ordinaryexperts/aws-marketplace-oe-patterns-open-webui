@@ -1,7 +1,7 @@
 SCRIPT_VERSION=1.7.6
 SCRIPT_PREINSTALL=ubuntu_2204_2404_preinstall.sh
 SCRIPT_POSTINSTALL=ubuntu_2204_2404_postinstall.sh
-OPEN_WEBUI_VERSION=0.6.36
+OPEN_WEBUI_VERSION=0.9.2
 PYTHON_VERSION=3.12
 
 # preinstall steps
@@ -175,27 +175,27 @@ echo "Downloading CUDA repository configuration..."
 wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
 mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
 
-echo "Downloading CUDA 12.8.1 installer (this may take a few minutes)..."
-wget -q https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda-repo-ubuntu2404-12-8-local_12.8.1-570.124.06-1_amd64.deb
+echo "Downloading CUDA 13.0.2 installer (this may take a few minutes)..."
+wget -q https://developer.download.nvidia.com/compute/cuda/13.0.2/local_installers/cuda-repo-ubuntu2404-13-0-local_13.0.2-580.95.05-1_amd64.deb
 echo "CUDA installer downloaded successfully"
 echo "Installing CUDA repository package..."
-dpkg -i cuda-repo-ubuntu2404-12-8-local_12.8.1-570.124.06-1_amd64.deb
-cp /var/cuda-repo-ubuntu2404-12-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
+dpkg -i cuda-repo-ubuntu2404-13-0-local_13.0.2-580.95.05-1_amd64.deb
+cp /var/cuda-repo-ubuntu2404-13-0-local/cuda-*-keyring.gpg /usr/share/keyrings/
 apt-get update -qq
 
 echo "Installing CUDA toolkit and driver (this will take several minutes)..."
 apt-get -y install cuda > /dev/null
 
 # cuDNN
-echo "Downloading cuDNN 9.8.0 installer (this may take a few minutes)..."
-wget -q https://developer.download.nvidia.com/compute/cudnn/9.8.0/local_installers/cudnn-local-repo-ubuntu2404-9.8.0_1.0-1_amd64.deb
+echo "Downloading cuDNN 9.13.0 installer (this may take a few minutes)..."
+wget -q https://developer.download.nvidia.com/compute/cudnn/9.13.0/local_installers/cudnn-local-repo-ubuntu2404-9.13.0_1.0-1_amd64.deb
 echo "cuDNN installer downloaded successfully"
 echo "Installing cuDNN repository package..."
-dpkg -i cudnn-local-repo-ubuntu2404-9.8.0_1.0-1_amd64.deb
-cp /var/cudnn-local-repo-ubuntu2404-9.8.0/cudnn-*-keyring.gpg /usr/share/keyrings/
+dpkg -i cudnn-local-repo-ubuntu2404-9.13.0_1.0-1_amd64.deb
+cp /var/cudnn-local-repo-ubuntu2404-9.13.0/cudnn-*-keyring.gpg /usr/share/keyrings/
 apt-get update -qq
 echo "Installing cuDNN..."
-apt-get -y install cudnn cudnn-cuda-12 > /dev/null
+apt-get -y install cudnn cudnn-cuda-13 > /dev/null
 
 # Python virtual environment (using system Python 3.12 from Ubuntu 24.04)
 echo "Installing python3-venv package..."
@@ -207,7 +207,7 @@ echo "Installing Python packages (flashinfer, vllm, huggingface_hub)..."
 /opt/open-webui-venv/bin/pip install --quiet --upgrade pip
 /opt/open-webui-venv/bin/pip install --quiet huggingface_hub
 /opt/open-webui-venv/bin/pip install --quiet flashinfer-python
-/opt/open-webui-venv/bin/pip install --quiet vllm
+/opt/open-webui-venv/bin/pip install --quiet vllm==0.20.0
 
 # NOTE: Model pre-downloading has been removed from AMI build
 # Models will be downloaded directly to NVMe instance store on first boot
@@ -249,60 +249,6 @@ if ! command -v cfn-signal &> /dev/null; then
     pip install --quiet --break-system-packages https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
 fi
 echo "CFN tools installed: $(which cfn-signal)"
-
-# Create check-secrets.py utility script
-echo "Creating check-secrets.py utility script..."
-cat > /root/check-secrets.py << 'PYTHON_SCRIPT_EOF'
-#!/usr/bin/env python3
-import boto3
-import json
-import secrets
-import sys
-
-def generate_secret_key():
-    """Generate a secure 32-byte hex string for WEBUI_SECRET_KEY"""
-    return secrets.token_hex(32)
-
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: check-secrets.py <region> <secret_arn>")
-        sys.exit(1)
-
-    region = sys.argv[1]
-    secret_arn = sys.argv[2]
-
-    client = boto3.client('secretsmanager', region_name=region)
-
-    try:
-        # Try to get the secret
-        response = client.get_secret_value(SecretId=secret_arn)
-        secret_data = json.loads(response['SecretString'])
-
-        # Check if WEBUI_SECRET_KEY exists
-        if 'WEBUI_SECRET_KEY' not in secret_data or not secret_data['WEBUI_SECRET_KEY']:
-            print("WEBUI_SECRET_KEY not found or empty, generating...")
-            secret_data['WEBUI_SECRET_KEY'] = generate_secret_key()
-
-            client.update_secret(
-                SecretId=secret_arn,
-                SecretString=json.dumps(secret_data)
-            )
-            print("Secret updated successfully with WEBUI_SECRET_KEY")
-        else:
-            print("WEBUI_SECRET_KEY already exists")
-
-    except client.exceptions.ResourceNotFoundException:
-        print(f"Secret {secret_arn} not found")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error checking/updating secret: {e}")
-        sys.exit(1)
-
-if __name__ == '__main__':
-    main()
-PYTHON_SCRIPT_EOF
-chmod +x /root/check-secrets.py
-echo "check-secrets.py created successfully"
 
 # post install steps
 echo "Downloading postinstall script..."

@@ -17,122 +17,116 @@ This pattern deploys Open WebUI with vLLM on AWS infrastructure, providing:
 - **Infrastructure**: AWS EC2 with GPU support (G6e instances)
 - **Networking**: Application Load Balancer with HTTPS
 
-## Using Aider with Open WebUI
+## Available Models
 
-[Aider](https://aider.chat) is an AI pair programming tool that works with Open WebUI's OpenAI-compatible API.
+The dropdown in the CFN `Model` parameter offers six curated models. Each is tested with the baked-in vLLM tool-calling parser and `max-model-len` defaults so OpenAI-compatible coding agents (opencode, aider, etc.) work out of the box.
 
-### Recommended Model for Aider
+| Model | Min instance | License | Notes |
+|---|---|---|---|
+| **`Qwen/Qwen3-8B`** *(default)* | g6.xlarge (24 GB) | Apache 2.0 | Qwen3 family, native tool calling, fits smallest GPU. Recommended starting point. |
+| `microsoft/Phi-4-mini-reasoning` | g6.xlarge (24 GB) | MIT | 3.8B reasoning model, very fast. |
+| `microsoft/phi-4` | g6e.xlarge / g6.2xlarge (48 GB) | MIT | 14B general-purpose. 16K native context. |
+| `openai/gpt-oss-20b` | g6e.xlarge / g6.2xlarge (48 GB) | Apache 2.0 | OpenAI's open release. Strong agentic. |
+| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | g6e.2xlarge (48 GB at FP8) | Apache 2.0 | 30B-total/3B-active MoE. Purpose-built for agentic coding — best fit for opencode. |
+| `nvidia/OpenReasoning-Nemotron-32B` | g6e.4xlarge (96 GB) | NVIDIA Open Model | 32B reasoning model, 131K context. |
 
-Based on 2025 benchmarks and research, **Qwen/Qwen2.5-Coder-7B-Instruct** is the best choice for aider when using this deployment:
+Custom Hugging Face models can be loaded via the `ModelOverride` parameter — see CloudFormation parameter description.
 
-- Industry benchmarks show top models for aider are Claude 3.5 Sonnet (64% accuracy) and DeepSeek R1
-- Among open-source models available in this deployment, **Qwen 2.5 Coder series** provides the best coding performance
-- The 7B model offers excellent speed on g6e.xlarge instances with strong coding capabilities
-- Larger Qwen models (14B, 32B) are available for more complex tasks requiring deeper reasoning
-
-### Prerequisites
-
-1. Install aider:
-```bash
-pip install aider-chat
-```
-
-2. Get your Open WebUI API key:
-   - Log into Open WebUI at your deployment URL
-   - Navigate to Settings → Account
-   - Create a new API key
-
-### Configuration
-
-Set up environment variables:
+To see the model currently loaded:
 
 ```bash
-export OPENAI_API_KEY='your-open-webui-api-key'
-export OPENAI_API_BASE='https://your-deployment-url/api'
-```
-
-### Basic Usage
-
-Start aider in your project directory:
-
-```bash
-aider --model 'openai/Qwen/Qwen2.5-Coder-7B-Instruct'
-```
-
-**Important**: Prefix the model name with `openai/` so litellm recognizes it as an OpenAI-compatible endpoint.
-
-### Available Models
-
-The models below have been tested and categorized by minimum instance requirements:
-
-**Coding Models (Best for Aider):**
-- **Qwen/Qwen2.5-Coder-7B-Instruct** ✓ Tested on g6.xlarge - Fast, efficient coding model (Recommended)
-- **Qwen/Qwen2.5-Coder-14B-Instruct** - Larger model with better reasoning (requires g6.2xlarge or larger)
-- **Qwen/Qwen2.5-Coder-32B-Instruct** - Most capable coding model (requires g6.4xlarge or larger)
-
-**Reasoning Models:**
-- **microsoft/Phi-4-mini-reasoning** ✓ Tested on g6e.xlarge - 3.8B reasoning model, very fast
-- **nvidia/OpenReasoning-Nemotron-7B** ✓ Tested on g6e.xlarge - 7B reasoning model, 131K context
-- **nvidia/OpenReasoning-Nemotron-14B** - 14B reasoning model (requires g6.2xlarge or larger)
-- **nvidia/OpenReasoning-Nemotron-32B** - 32B reasoning model (requires g6.4xlarge or larger)
-
-**General Purpose Models:**
-- **microsoft/phi-4** ✓ Tested on g6e.xlarge - 14B general model with strong performance (requires g6.2xlarge or larger)
-
-To use a different model:
-
-```bash
-# List available models
 curl -H "Authorization: Bearer $OPENAI_API_KEY" \
   https://your-deployment-url/api/models
-
-# Use specific model with aider
-aider --model 'openai/your-model-name'
 ```
 
-### Advanced Configuration
+## Using OpenAI-Compatible Coding Agents
 
-You can create a `.aider.conf.yml` file in your project:
+The deployment exposes two API base paths:
+
+- `https://<hostname>/api` — Open WebUI's native chat completions (used by opencode, aider, and most OpenAI SDKs). Requires your Open WebUI API key.
+- `https://<hostname>/api/v1` — same backend, OpenAI-spec `/v1/chat/completions` path. Use this if your tool auto-appends `/v1`.
+
+### Get an API key
+
+1. Sign up the first user in Open WebUI (becomes admin)
+2. Settings → Account → API Keys → create a key (copy it; you can only see it once)
+
+### opencode (https://opencode.ai)
+
+opencode needs the OpenAI-compat backend declared as a custom provider — env vars alone aren't enough. Create `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openwebui": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Open WebUI",
+      "options": {
+        "baseURL": "https://<your-hostname>/api",
+        "apiKey": "sk-your-api-key"
+      },
+      "models": {
+        "Qwen/Qwen3-8B": {
+          "name": "Qwen3 8B",
+          "tool_call": true,
+          "reasoning": true,
+          "limit": {
+            "context": 32768,
+            "output": 4096
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Then run:
+
+```bash
+opencode --model openwebui/Qwen/Qwen3-8B
+```
+
+**Tips:**
+- `limit.output: 4096` is required — opencode's default of 32000 exceeds the model's effective output budget.
+- `limit.context: 32768` matches the baked-in `--max-model-len 32768` so opencode won't try to send more context than vLLM accepts.
+- For deeper agentic work, switch to `Qwen/Qwen3-Coder-30B-A3B-Instruct` on `g6e.2xlarge`.
+
+### aider (https://aider.chat)
+
+aider reads OpenAI env vars directly:
+
+```bash
+pip install aider-chat
+export OPENAI_API_KEY='sk-your-open-webui-api-key'
+export OPENAI_API_BASE='https://<your-hostname>/api'
+aider --model 'openai/Qwen/Qwen3-8B'
+```
+
+Or via `.aider.conf.yml`:
 
 ```yaml
-openai-api-base: https://your-deployment-url/api
+openai-api-base: https://<your-hostname>/api
 openai-api-key: sk-your-api-key-here
-model: openai/Qwen/Qwen2.5-Coder-7B-Instruct
+model: openai/Qwen/Qwen3-8B
 ```
 
-### Tips for Best Performance
+Note: prefix the model with `openai/` so litellm treats it as an OpenAI-compatible endpoint.
 
-1. **Model Selection**: Start with the 7B model for fast iterations, use larger models for complex tasks
-2. **Context Window**: Qwen models support large context windows, making them ideal for working with multiple files
-3. **Git Integration**: Aider works best in git repositories - it uses git to track changes
-4. **Model Warming**: First request may be slower as the model loads - subsequent requests are faster
+### Other tools
+
+Any tool that supports an OpenAI-compatible base URL works the same way. Set base URL to `https://<your-hostname>/api`, use your Open WebUI API key, and reference the model by its full Hugging Face name (e.g. `Qwen/Qwen3-8B`).
 
 ### Troubleshooting
 
-#### "LLM Provider NOT provided" Error
-
-Make sure to prefix your model name with `openai/`:
-```bash
-# Wrong
-aider --model 'Qwen/Qwen2.5-Coder-7B-Instruct'
-
-# Correct
-aider --model 'openai/Qwen/Qwen2.5-Coder-7B-Instruct'
-```
-
-#### Authentication Errors
-
-Verify your API key is valid:
-```bash
-curl -H "Authorization: Bearer $OPENAI_API_KEY" \
-  $OPENAI_API_BASE/models
-```
-
-#### Slow Response Times
-
-- Ensure you're using an appropriately sized GPU instance
-- Check that the model matches your instance type (7B → g6e.xlarge, 14B → g6e.2xlarge, etc.)
-- First request after model load will be slower
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Wrong API key` from your tool | Tool is hitting api.openai.com (default), not your deployment | Set the tool's base-URL config to `https://<your-hostname>/api`. Env vars like `OPENAI_API_BASE` are SDK-specific — check your tool's docs. |
+| `max_tokens=N cannot be greater than max_model_len` | Tool requested more output tokens than vLLM allows | Cap output in tool config (e.g. opencode's `limit.output: 4096`). |
+| `prompt contains at least N input tokens, total exceeds max_model_len` | Tool's system prompt + tool definitions are too large for the model context | Increase `max-model-len` via SSM custom config (see "Custom Configuration") or pick a smaller agent profile. |
+| `auto tool choice requires --enable-auto-tool-choice and --tool-call-parser` | vLLM started without tool-call flags | This pattern bakes them in by default. If you've overridden `CustomVllmConfigParameterArn`, ensure it includes the tool-call args or uses an empty value. |
+| Slow first response | Model loading from NVMe + CUDA graph capture | Normal — takes 1–3 min after instance boot. Subsequent requests are fast. |
 
 ## API Documentation
 
@@ -208,18 +202,33 @@ The deployment supports both G6 (NVIDIA L4) and G6e (NVIDIA L40S) instance famil
 
 ## Custom Configuration
 
-You can customize both vLLM and Open WebUI settings by providing configuration via AWS Systems Manager Parameter Store. This allows you to override default settings without modifying the CDK code.
+You can customize both vLLM and Open WebUI settings by providing configuration via AWS Systems Manager Parameter Store. The CFN parameters `CustomVllmConfigParameterArn` and `CustomOpenWebuiConfigParameterArn` accept SSM Parameter ARNs whose values are appended to the vLLM command line / exported as Open WebUI env vars at boot.
+
+### Built-in vLLM defaults
+
+To make a fresh deploy work for OpenAI-compatible coding agents out of the box, the pattern bakes the following flags into `start-vllm.sh` based on the selected model:
+
+| Model family | Tool-call parser | `--max-model-len` |
+|---|---|---|
+| `Qwen/*`, `nvidia/OpenReasoning-Nemotron-*` | `hermes` | 32768 |
+| `microsoft/Phi-4-mini-*` | `phi4_mini_json` | 32768 |
+| `openai/gpt-oss-*` | `gpt_oss` | 32768 |
+| `microsoft/phi-4` | (none) | 16384 |
+
+All models also get `--kv-cache-dtype fp8` so the agent's tool-definition system prompt (typically 10–15K tokens) fits alongside a usable output budget on a 24 GB GPU.
+
+If you set `CustomVllmConfigParameterArn`, your value is **appended** to the command, so any flag you provide overrides the baked-in default.
 
 ### Creating Configuration Parameters
 
 Create SSM Parameter Store SecureString parameters containing your custom configuration:
 
 ```bash
-# Custom vLLM configuration (additional CLI arguments)
+# Custom vLLM configuration (e.g. raise context to 64K on a larger instance)
 aws ssm put-parameter \
   --name "/oe-patterns/open-webui/${USER}/vllm-config" \
   --type "SecureString" \
-  --value "--max-model-len 8192 --max-num-seqs 256"
+  --value "--max-model-len 65536 --max-num-seqs 256"
 
 # Custom Open WebUI configuration (environment variables)
 aws ssm put-parameter \
@@ -370,10 +379,7 @@ This pattern uses AWS Secrets Manager to securely manage system-generated secret
 
 1. **First Deployment**: When the stack is deployed for the first time, a secret is created in AWS Secrets Manager with the stack name as a prefix (e.g., `oe-patterns-open-webui-dylan-secret-xxxxx`)
 
-2. **Instance Startup**: On each instance boot, the `check-secrets.py` script:
-   - Validates the secret exists
-   - Checks if `WEBUI_SECRET_KEY` is present
-   - If missing, generates a secure 32-byte hex string and updates the secret
+2. **Secret Generation**: The CDK `Secret` construct's `generate_string_key` template generates `WEBUI_SECRET_KEY` (a secure 64-char string) at stack-create time. This was previously done via a `check-secrets.py` boot script; that script was removed in 1.0.1 in favor of the construct.
 
 3. **Secret Retrieval**: The instance fetches the secret value using AWS Systems Manager Parameter Store's reference to Secrets Manager: `/aws/reference/secretsmanager/<secret-name>`
 

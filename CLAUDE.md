@@ -12,6 +12,10 @@ This is an AWS Marketplace pattern that deploys Open WebUI with vLLM for running
 
 The infrastructure includes: VPC, Auto Scaling Group (EC2 with GPU), Application Load Balancer, Route53, ACM, and supporting services (IAM, CloudWatch, SSM).
 
+## Upgrade Workflow
+
+For upgrading the upstream Open WebUI / vLLM versions, follow the process in [aws-marketplace-utilities/UPGRADE.md](https://github.com/ordinaryexperts/aws-marketplace-utilities/blob/main/UPGRADE.md).
+
 ## Development Environment
 
 All development is done inside Docker containers via docker-compose to ensure consistency:
