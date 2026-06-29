@@ -43,6 +43,8 @@ models:
     min_instance_type: "g6e.2xlarge"
   - name: "Qwen/Qwen2.5-Coder-32B-Instruct"
     min_instance_type: "g6e.4xlarge"
+  - name: "zai-org/GLM-4-9B-0414"
+    min_instance_type: "g6e.xlarge"
 
 # Aider compatibility configuration
 aider:

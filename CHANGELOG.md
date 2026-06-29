@@ -1,5 +1,7 @@
 # Unreleased
 
+* Added model to dropdown: zai-org/GLM-4-9B-0414 (MIT, 9B general-purpose, 32K context; verified loading on g6e.4xlarge). No validated vLLM tool-call parser for the GLM-4-0414 dense series yet, so it uses the default config (tool calling off, 32K max-model-len).
+
 # 1.1.0
 
 * Upgrading to Open WebUI 0.9.2 (from 0.6.36)
@@ -28,7 +30,7 @@
 * Refactored secret handling to use Secret construct's built-in WEBUI_SECRET_KEY generation (removed bespoke check-secrets.py)
 * Updated oe-patterns-cdk-common to 4.5.1
 * Bumped CloudFormation parameter name AsgAmiIdv101 → AsgAmiIdv110
-* Bumped devenv image to 2.8.4
+* Bumped devenv image to 2.8.6 (Node 22, EOL 2027-04-30)
 
 # 1.0.0
 
