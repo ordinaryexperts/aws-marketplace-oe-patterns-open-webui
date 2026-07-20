@@ -30,8 +30,8 @@ deploy: build clean-cdk
 	--require-approval never \
 	--parameters AlbCertificateArn=arn:aws:acm:us-east-1:992593896645:certificate/943928d7-bfce-469c-b1bf-11561024580e \
 	--parameters AlbIngressCidr=0.0.0.0/0 \
-	--parameters AsgAmiIdv110=ami-0665ec9b6b44a0364 \
-	--parameters AsgReprovisionString=20260502.2 \
+	--parameters AsgAmiIdv110=ami-09e6d53ea122458ab \
+	--parameters AsgReprovisionString=20260709.1 \
 	--parameters AsgInstanceType=g6.xlarge \
 	--parameters Model=Qwen/Qwen3-8B \
 	--parameters DnsHostname=open-webui-${USER}.dev.patterns.ordinaryexperts.com \

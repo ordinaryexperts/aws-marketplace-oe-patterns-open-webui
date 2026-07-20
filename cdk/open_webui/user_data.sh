@@ -107,6 +107,9 @@ fi
 #   microsoft/Phi-4-mini-*                 -> phi4_mini_json
 #   openai/gpt-oss-*                       -> gpt_oss
 #   microsoft/phi-4 (full)                 -> no built-in parser; tool calling disabled
+#   zai-org/GLM-4-9B-0414                  -> no validated vLLM parser for the 0414 dense
+#                                             series (glm45/glm47 target GLM-4.5+); tool
+#                                             calling disabled pending validation
 # Users can still override via CustomVllmConfigParameterArn (CUSTOM_VLLM_ARGS is appended last).
 case "${ModelName}" in
     Qwen/*|nvidia/OpenReasoning-Nemotron-*)

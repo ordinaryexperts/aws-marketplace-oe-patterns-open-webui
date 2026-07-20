@@ -8,7 +8,11 @@ This pattern deploys Open WebUI with vLLM on AWS infrastructure, providing:
 - GPU-accelerated model inference using vLLM
 - Web interface for model interaction via Open WebUI
 - OpenAI-compatible API for third-party tool integration
-- Support for Qwen, Microsoft Phi, and NVIDIA Nemotron models
+- Support for Qwen, Microsoft Phi, NVIDIA Nemotron, and Zhipu GLM models
+
+## Demo
+
+Watch a walkthrough of this pattern on YouTube: https://youtu.be/GLUVZANrQbc
 
 ## Architecture
 
@@ -19,7 +23,7 @@ This pattern deploys Open WebUI with vLLM on AWS infrastructure, providing:
 
 ## Available Models
 
-The dropdown in the CFN `Model` parameter offers six curated models. Each is tested with the baked-in vLLM tool-calling parser and `max-model-len` defaults so OpenAI-compatible coding agents (opencode, aider, etc.) work out of the box.
+The dropdown in the CFN `Model` parameter offers seven curated models. Each is tested with the baked-in vLLM tool-calling parser and `max-model-len` defaults so OpenAI-compatible coding agents (opencode, aider, etc.) work out of the box.
 
 | Model | Min instance | License | Notes |
 |---|---|---|---|
@@ -29,6 +33,7 @@ The dropdown in the CFN `Model` parameter offers six curated models. Each is tes
 | `openai/gpt-oss-20b` | g6e.xlarge / g6.2xlarge (48 GB) | Apache 2.0 | OpenAI's open release. Strong agentic. |
 | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | g6e.2xlarge (48 GB at FP8) | Apache 2.0 | 30B-total/3B-active MoE. Purpose-built for agentic coding — best fit for opencode. |
 | `nvidia/OpenReasoning-Nemotron-32B` | g6e.4xlarge (96 GB) | NVIDIA Open Model | 32B reasoning model, 131K context. |
+| `zai-org/GLM-4-9B-0414` | g6e.xlarge / g6.2xlarge (48 GB) | MIT | 9B general-purpose, 32K context. No baked-in tool-call parser yet, so tool calling is off by default. |
 
 Custom Hugging Face models can be loaded via the `ModelOverride` parameter — see CloudFormation parameter description.
 
@@ -214,6 +219,7 @@ To make a fresh deploy work for OpenAI-compatible coding agents out of the box, 
 | `microsoft/Phi-4-mini-*` | `phi4_mini_json` | 32768 |
 | `openai/gpt-oss-*` | `gpt_oss` | 32768 |
 | `microsoft/phi-4` | (none) | 16384 |
+| `zai-org/GLM-4-9B-0414` | (none — no validated 0414 parser) | 32768 |
 
 All models also get `--kv-cache-dtype fp8` so the agent's tool-definition system prompt (typically 10–15K tokens) fits alongside a usable output budget on a 24 GB GPU.
 

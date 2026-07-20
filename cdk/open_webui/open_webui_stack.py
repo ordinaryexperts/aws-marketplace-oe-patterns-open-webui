@@ -27,7 +27,7 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-0665ec9b6b44a0364" # ordinary-experts-patterns-open-webui-1.1.0-20260502-0103
+AMI_ID="ami-04c3b2c3e90947443" # ordinary-experts-patterns-open-webui-1.1.0-20260717-0907
 NEXT_RELEASE_PREFIX="v110"
 
 class OpenWebuiStack(Stack):
@@ -59,7 +59,8 @@ class OpenWebuiStack(Stack):
                 "nvidia/OpenReasoning-Nemotron-32B",
                 "openai/gpt-oss-20b",
                 "Qwen/Qwen3-8B",
-                "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+                "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+                "zai-org/GLM-4-9B-0414"
             ],
             description="The LLM to load. These models have been tested with this configuration. To try a different model, see the ModelOverride parameter"
         )
@@ -249,7 +250,8 @@ class OpenWebuiStack(Stack):
                                 Fn.condition_equals(self.model_param.value_as_string, "microsoft/phi-4"),
                                 Fn.condition_equals(self.model_param.value_as_string, "nvidia/OpenReasoning-Nemotron-32B"),
                                 Fn.condition_equals(self.model_param.value_as_string, "openai/gpt-oss-20b"),
-                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen3-Coder-30B-A3B-Instruct")
+                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen3-Coder-30B-A3B-Instruct"),
+                                Fn.condition_equals(self.model_param.value_as_string, "zai-org/GLM-4-9B-0414")
                             )
                         ),
                         # OR allow if instance is NOT g6.xlarge (g6.xlarge has only 24GB VRAM)

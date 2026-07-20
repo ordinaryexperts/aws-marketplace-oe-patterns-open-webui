@@ -14,7 +14,7 @@ The infrastructure includes: VPC, Auto Scaling Group (EC2 with GPU), Application
 
 ## Upgrade Workflow
 
-For upgrading the upstream Open WebUI / vLLM versions, follow the process in [aws-marketplace-utilities/UPGRADE.md](https://github.com/ordinaryexperts/aws-marketplace-utilities/blob/main/UPGRADE.md).
+For upgrading the upstream Open WebUI / vLLM versions, follow the process in [aws-marketplace-utilities/UPGRADE.md](https://github.com/ordinaryexperts/aws-marketplace-utilities/blob/develop/UPGRADE.md).
 
 ## Development Environment
 
@@ -107,8 +107,10 @@ EC2 instances run `cdk/open_webui/user_data.sh` on boot, which:
 
 The stack uses CloudFormation parameters extensively (see `CfnParameter` calls in `open_webui_stack.py`). Key parameters:
 - `Model` - The LLM to load from dropdown of tested open-source models:
-  - **General purpose**: microsoft/phi-4 (14B), Qwen/Qwen2.5-Coder-7B/14B/32B-Instruct
-  - **Reasoning models**: microsoft/Phi-4-mini-reasoning (3.8B), nvidia/OpenReasoning-Nemotron-7B/14B/32B
+  - **General purpose**: Qwen/Qwen3-8B (default), microsoft/phi-4 (14B), openai/gpt-oss-20b, zai-org/GLM-4-9B-0414 (9B)
+  - **Coding**: Qwen/Qwen3-Coder-30B-A3B-Instruct (MoE 30B/3B-active)
+  - **Reasoning models**: microsoft/Phi-4-mini-reasoning (3.8B), nvidia/OpenReasoning-Nemotron-32B
+  - Note: g6e.xlarge–16xlarge are all single-GPU (one 48 GB L40S); 32B dense models need a multi-GPU instance plus `--tensor-parallel-size`, which user_data does not yet set
 - `ModelOverride` - Custom model name in Hugging Face format to override the dropdown
 - `CustomOpenWebuiConfigParameterArn` - Optional SSM Parameter ARN for custom Open WebUI config
 - `CustomVllmConfigParameterArn` - Optional SSM Parameter ARN for custom vLLM config
