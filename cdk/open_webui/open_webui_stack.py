@@ -27,8 +27,8 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-0704c4b3463014b5c" # ordinary-experts-patterns-open-webui-1.0.0-20251128-0555
-NEXT_RELEASE_PREFIX="v100"
+AMI_ID="ami-04c3b2c3e90947443" # ordinary-experts-patterns-open-webui-1.1.0-20260717-0907
+NEXT_RELEASE_PREFIX="v110"
 
 class OpenWebuiStack(Stack):
 
@@ -52,16 +52,15 @@ class OpenWebuiStack(Stack):
         self.model_param = CfnParameter(
             self,
             "Model",
-            default="Qwen/Qwen2.5-Coder-7B-Instruct",
+            default="Qwen/Qwen3-8B",
             allowed_values=[
                 "microsoft/phi-4",
                 "microsoft/Phi-4-mini-reasoning",
-                "nvidia/OpenReasoning-Nemotron-7B",
-                "nvidia/OpenReasoning-Nemotron-14B",
                 "nvidia/OpenReasoning-Nemotron-32B",
-                "Qwen/Qwen2.5-Coder-7B-Instruct",
-                "Qwen/Qwen2.5-Coder-14B-Instruct",
-                "Qwen/Qwen2.5-Coder-32B-Instruct"
+                "openai/gpt-oss-20b",
+                "Qwen/Qwen3-8B",
+                "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+                "zai-org/GLM-4-9B-0414"
             ],
             description="The LLM to load. These models have been tested with this configuration. To try a different model, see the ModelOverride parameter"
         )
@@ -99,24 +98,29 @@ class OpenWebuiStack(Stack):
 
         dns = Dns(self, "Dns")
 
-        # Secret for WEBUI_SECRET_KEY
-        secret = Secret(self, "Secret")
+        # Secret for WEBUI_SECRET_KEY (no username/password)
+        secret = Secret(
+            self,
+            "Secret",
+            generate_string_key="WEBUI_SECRET_KEY",
+            secret_string_template="{}",
+            password_length=64
+        )
 
-        asg_update_secret_policy = aws_iam.CfnRole.PolicyProperty(
+        asg_read_secret_policy = aws_iam.CfnRole.PolicyProperty(
             policy_document=aws_iam.PolicyDocument(
                 statements=[
                     aws_iam.PolicyStatement(
                         effect=aws_iam.Effect.ALLOW,
                         actions=[
                             "secretsmanager:DescribeSecret",
-                            "secretsmanager:GetSecretValue",
-                            "secretsmanager:UpdateSecret"
+                            "secretsmanager:GetSecretValue"
                         ],
                         resources=[secret.secret_arn()]
                     )
                 ]
             ),
-            policy_name="AllowUpdateSecret"
+            policy_name="AllowReadSecret"
         )
 
         with open("open_webui/user_data.sh") as f:
@@ -124,7 +128,7 @@ class OpenWebuiStack(Stack):
         asg = Asg(
             self,
             "Asg",
-            additional_iam_role_policies=[asg_update_secret_policy],
+            additional_iam_role_policies=[asg_read_secret_policy],
             allowed_instance_types = [
                 "g6.xlarge",
                 "g6.2xlarge",
@@ -232,22 +236,22 @@ class OpenWebuiStack(Stack):
 
         # CloudFormation Rules for fail-fast validation of model/instance compatibility
         # Rule 1: Prevent 14B+ models on instances with < 48GB VRAM (only g6.xlarge with 24GB)
-        # Note: g6e.xlarge has 48GB VRAM and works with 14B models
-        # Tested: phi-4 and Qwen 14B both fail on g6.xlarge (24GB VRAM)
+        # Models with >8B parameters require >24GB VRAM and cannot fit on g6.xlarge.
+        # Models that fit on g6.xlarge (24GB): Qwen/Qwen3-8B, microsoft/Phi-4-mini-reasoning.
         CfnRule(
             self,
-            "Model14BRequiresLargerInstance",
+            "ModelRequiresLargerInstance",
             assertions=[
                 {
                     "assert": Fn.condition_or(
-                        # Allow if NOT using a 14B/32B model...
+                        # Allow if NOT using a model that requires >24GB VRAM...
                         Fn.condition_not(
                             Fn.condition_or(
                                 Fn.condition_equals(self.model_param.value_as_string, "microsoft/phi-4"),
-                                Fn.condition_equals(self.model_param.value_as_string, "nvidia/OpenReasoning-Nemotron-14B"),
                                 Fn.condition_equals(self.model_param.value_as_string, "nvidia/OpenReasoning-Nemotron-32B"),
-                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen2.5-Coder-14B-Instruct"),
-                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen2.5-Coder-32B-Instruct")
+                                Fn.condition_equals(self.model_param.value_as_string, "openai/gpt-oss-20b"),
+                                Fn.condition_equals(self.model_param.value_as_string, "Qwen/Qwen3-Coder-30B-A3B-Instruct"),
+                                Fn.condition_equals(self.model_param.value_as_string, "zai-org/GLM-4-9B-0414")
                             )
                         ),
                         # OR allow if instance is NOT g6.xlarge (g6.xlarge has only 24GB VRAM)
@@ -255,7 +259,7 @@ class OpenWebuiStack(Stack):
                             Fn.condition_equals(asg.instance_type_param.value_as_string, "g6.xlarge")
                         )
                     ),
-                    "assertDescription": "14B and 32B models require at least 48GB VRAM. The g6.xlarge instance only has 24GB VRAM. Please select g6e.xlarge (48GB) or larger: g6.2xlarge, g6.4xlarge, g6.8xlarge, g6.16xlarge, g6e.2xlarge, g6e.4xlarge, g6e.8xlarge, or g6e.16xlarge."
+                    "assertDescription": "The selected Model requires more than 24GB of GPU VRAM and cannot run on g6.xlarge. Please select a larger instance type: g6.2xlarge, g6.4xlarge, g6.8xlarge, g6.16xlarge, g6e.xlarge, g6e.2xlarge, g6e.4xlarge, g6e.8xlarge, or g6e.16xlarge."
                 }
             ]
         )

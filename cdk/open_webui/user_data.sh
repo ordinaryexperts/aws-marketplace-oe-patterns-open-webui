@@ -2,9 +2,6 @@
 
 mkdir -p /opt/oe/patterns
 
-# Check and fetch secrets from Secrets Manager (check-secrets.py is pre-installed in AMI)
-/root/check-secrets.py ${AWS::Region} ${SecretArn}
-
 SECRET_NAME=$(aws secretsmanager describe-secret --secret-id ${SecretArn} --region ${AWS::Region} | jq -r .Name)
 aws ssm get-parameter \
     --name "/aws/reference/secretsmanager/$SECRET_NAME" \
@@ -105,6 +102,45 @@ if [[ "${CustomVllmConfigParameterArn}" != "" ]]; then
     echo "Custom vLLM args: $CUSTOM_VLLM_ARGS"
 fi
 
+# Tool-calling parser is model-specific. Default per model family:
+#   Qwen / nvidia/OpenReasoning-Nemotron-* -> hermes
+#   microsoft/Phi-4-mini-*                 -> phi4_mini_json
+#   openai/gpt-oss-*                       -> gpt_oss
+#   microsoft/phi-4 (full)                 -> no built-in parser; tool calling disabled
+#   zai-org/GLM-4-9B-0414                  -> no validated vLLM parser for the 0414 dense
+#                                             series (glm45/glm47 target GLM-4.5+); tool
+#                                             calling disabled pending validation
+# Users can still override via CustomVllmConfigParameterArn (CUSTOM_VLLM_ARGS is appended last).
+case "${ModelName}" in
+    Qwen/*|nvidia/OpenReasoning-Nemotron-*)
+        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+        ;;
+    microsoft/Phi-4-mini-*)
+        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser phi4_mini_json"
+        ;;
+    openai/gpt-oss-*)
+        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gpt_oss"
+        ;;
+    *)
+        TOOL_CALL_ARGS=""
+        ;;
+esac
+echo "Default tool-call args for ${ModelName}: $TOOL_CALL_ARGS"
+
+# Default max-model-len + KV cache dtype.
+# microsoft/phi-4 (full) maxes at 16K natively; everything else here supports 32K+.
+# fp8 KV cache roughly doubles the available KV-cache capacity, which agentic clients
+# (opencode, aider) need because their tool-definition prompts are 10-15K tokens.
+case "${ModelName}" in
+    microsoft/phi-4)
+        DEFAULT_MAX_MODEL_LEN_ARGS="--max-model-len 16384 --kv-cache-dtype fp8"
+        ;;
+    *)
+        DEFAULT_MAX_MODEL_LEN_ARGS="--max-model-len 32768 --kv-cache-dtype fp8"
+        ;;
+esac
+echo "Default max-model-len args for ${ModelName}: $DEFAULT_MAX_MODEL_LEN_ARGS"
+
 cat <<EOF > /root/start-vllm.sh
 #!/bin/bash
 
@@ -121,7 +157,7 @@ fi
 # vLLM will automatically download the model to /root/.cache/huggingface (symlinked to NVMe)
 # on first startup. This typically takes 5-10 minutes for ~29GB models when downloading to NVMe.
 # Model loading from NVMe takes ~3 minutes after download completes.
-vllm serve ${ModelName} --gpu-memory-utilization 0.95 $CUSTOM_VLLM_ARGS
+vllm serve ${ModelName} --gpu-memory-utilization 0.95 $TOOL_CALL_ARGS $DEFAULT_MAX_MODEL_LEN_ARGS $CUSTOM_VLLM_ARGS
 EOF
 chmod 700 /root/start-vllm.sh
 
@@ -183,10 +219,13 @@ export CORS_ALLOW_ORIGIN=https://${Hostname}
 export WEBUI_URL=https://${Hostname}
 
 # Fetch and apply custom environment variables from SSM Parameter Store
+# Note: --region is required because systemd context does not auto-detect region from IMDS reliably.
+# Wrapping in `timeout 30` so a slow IMDS or transient SSM error cannot hang service startup indefinitely.
 if [[ "${CustomOpenWebuiConfigParameterArn}" != "" ]]; then
   echo "Fetching custom Open WebUI config from ${CustomOpenWebuiConfigParameterArn}..."
-  CUSTOM_OPENWEBUI_ENV=\$(aws ssm get-parameter --name "${CustomOpenWebuiConfigParameterArn}" --with-decryption --output text --query Parameter.Value 2>/dev/null)
-  if [[ \$? -eq 0 && -n "\$CUSTOM_OPENWEBUI_ENV" ]]; then
+  CUSTOM_OPENWEBUI_ENV=\$(timeout 30 aws ssm get-parameter --region ${AWS::Region} --name "${CustomOpenWebuiConfigParameterArn}" --with-decryption --output text --query Parameter.Value)
+  rc=\$?
+  if [[ \$rc -eq 0 && -n "\$CUSTOM_OPENWEBUI_ENV" ]]; then
     echo "Applying custom Open WebUI configuration..."
     while IFS= read -r line; do
       # Skip empty lines and comments
@@ -199,7 +238,7 @@ if [[ "${CustomOpenWebuiConfigParameterArn}" != "" ]]; then
     done <<< "\$CUSTOM_OPENWEBUI_ENV"
     echo "Custom Open WebUI configuration applied successfully"
   else
-    echo "No custom Open WebUI config found or error fetching parameter"
+    echo "No custom Open WebUI config applied (rc=\$rc)"
   fi
 else
   echo "No custom Open WebUI config parameter ARN provided"

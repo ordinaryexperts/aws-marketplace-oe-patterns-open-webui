@@ -33,7 +33,7 @@ security_groups:
       - "0.0.0.0/0"
 
 # CloudFormation delivery option details
-architecture_diagram_url: ""
+architecture_diagram_url: "https://ordinary-experts-aws-marketplace-pattern-artifacts.s3.amazonaws.com/open_webui/1.1.0/diagram.png"
 aws_calculator_url: ""
 
 # ============================================================================
@@ -45,7 +45,7 @@ product_title: "Open WebUI on AWS by FOSSonCloud"
 logo_url: "https://ordinaryexperts.com/img/products/openwebui-pattern/openwebui-product-logo.png"
 
 short_description: |
-  Deploy Open WebUI with GPU-accelerated LLM inference on AWS. Run open-source models like Qwen, Phi-4, and Nemotron with vLLM on G6/G6e instances. OpenAI-compatible API included.
+  Deploy Open WebUI with GPU-accelerated LLM inference on AWS. Run open-source models like Qwen3, OpenAI gpt-oss, Phi-4, and OpenReasoning Nemotron with vLLM on G6/G6e instances. OpenAI-compatible API included for agentic coding tools.
 
 long_description: |
   Open WebUI on AWS provides a production-ready deployment of Open WebUI with vLLM for GPU-accelerated large language model inference.
@@ -54,19 +54,21 @@ long_description: |
 
   - Open WebUI Interface - Modern, ChatGPT-style web interface for interacting with LLMs
   - vLLM Backend - High-performance inference server with OpenAI-compatible API
-  - Flexible Model Support - Pre-tested models including Qwen 2.5 Coder (7B/14B/32B), Microsoft Phi-4, and NVIDIA Nemotron reasoning models
+  - Flexible Model Support - Pre-tested models including Qwen3-8B, Qwen3-Coder-30B-A3B, OpenAI gpt-oss-20b, Microsoft Phi-4, and NVIDIA OpenReasoning Nemotron
   - GPU-Optimized - Runs on NVIDIA L4 (G6) and L40S (G6e) instances for cost-optimized or performance-optimized deployments
   - Secure by Default - HTTPS via ALB, private VPC networking, and AWS Secrets Manager for credential management
   - Persistent Storage - EBS-backed data volume survives instance replacements
-  - Developer Ready - OpenAI-compatible API works with tools like aider, LangChain, and any OpenAI SDK
+  - Developer Ready - OpenAI-compatible API works with agentic coding tools like opencode and aider, plus LangChain and any OpenAI SDK
 
   SUPPORTED MODELS
 
-  - Qwen/Qwen2.5-Coder-7B-Instruct (coding, recommended for development)
-  - Qwen/Qwen2.5-Coder-14B-Instruct, Qwen/Qwen2.5-Coder-32B-Instruct (larger coding models)
+  - Qwen/Qwen3-8B (general purpose, 8B - default; fits g6.xlarge with strong tool calling)
+  - Qwen/Qwen3-Coder-30B-A3B-Instruct (MoE 30B/3B-active, purpose-built for agentic coding)
+  - openai/gpt-oss-20b (OpenAI's open release, 20B)
   - microsoft/phi-4 (general purpose, 14B)
   - microsoft/Phi-4-mini-reasoning (fast reasoning, 3.8B)
-  - nvidia/OpenReasoning-Nemotron-7B/14B/32B (reasoning models)
+  - nvidia/OpenReasoning-Nemotron-32B (32B reasoning model, 131K context)
+  - zai-org/GLM-4-9B-0414 (general purpose, 9B; 32K context)
   - Custom models via ModelOverride parameter
 
   INFRASTRUCTURE
@@ -106,7 +108,7 @@ long_description: |
 highlights:
   - "GPU-Accelerated Inference - Run LLMs on NVIDIA L4/L40S GPUs with vLLM for production-grade throughput and low latency"
   - "Open WebUI Interface - Modern chat interface with conversation history, model switching, user management, and API key generation"
-  - "OpenAI-Compatible API - Integrate with existing tools like aider, LangChain, Continue.dev, or any OpenAI SDK client"
+  - "OpenAI-Compatible API - Integrate with agentic coding tools like opencode and aider, plus LangChain or any OpenAI SDK client"
   - "Flexible Model Selection - Choose from pre-tested coding, reasoning, and general-purpose open-source models, or bring your own"
   - "Production Ready - HTTPS, persistent EBS storage with automated backups, CloudWatch logging, and Secrets Manager integration"
 
@@ -152,8 +154,8 @@ delivery_option:
 
     FEATURES
 
-    - Pre-tested open-source models: Qwen 2.5 Coder, Microsoft Phi-4, NVIDIA Nemotron
-    - OpenAI-compatible API for integration with tools like aider, LangChain, and Continue.dev
+    - Pre-tested open-source models: Qwen3-8B, Qwen3-Coder-30B-A3B, OpenAI gpt-oss-20b, Microsoft Phi-4, NVIDIA OpenReasoning Nemotron, Zhipu GLM-4-9B
+    - OpenAI-compatible API for integration with agentic coding tools (opencode, aider) plus LangChain or any OpenAI SDK
     - Custom model support via ModelOverride parameter
     - Optional custom configuration via SSM Parameter Store
     - Systems Manager Session Manager access (no SSH keys required)
@@ -166,9 +168,9 @@ delivery_option:
 
     INSTANCE SIZING
 
-    - g6.xlarge (default): 24GB VRAM - 7B models
-    - g6e.xlarge / g6.2xlarge: 48GB VRAM - 14B models
-    - g6e.2xlarge / g6.4xlarge: 96GB VRAM - 32B models
+    - g6.xlarge (default): 24GB VRAM - Qwen3-8B, Phi-4-mini-reasoning
+    - g6e.xlarge / g6.2xlarge: 48GB VRAM - Phi-4, gpt-oss-20b, GLM-4-9B, Qwen3-Coder-30B-A3B (FP8)
+    - g6e.4xlarge / g6.4xlarge: 96GB VRAM - Qwen3-Coder-30B-A3B (FP16), OpenReasoning-Nemotron-32B
 
     EXTERNAL CONNECTIONS
 
@@ -177,6 +179,8 @@ delivery_option:
     Deployment takes 15-60 minutes depending on model size due to model download and loading.
 
   recommended_instance_type: "g6.xlarge"
+
+  architecture_diagram_url: "https://ordinary-experts-aws-marketplace-pattern-artifacts.s3.amazonaws.com/open_webui/1.1.0/diagram.png"
 
   usage_instructions: |
     Full documentation: https://github.com/ordinaryexperts/aws-marketplace-oe-patterns-open-webui
@@ -197,11 +201,16 @@ delivery_option:
 
     5. Generate API keys in Settings > Account for external tools
 
-    USING WITH AIDER OR OTHER OPENAI CLIENTS
+    USING WITH AGENTIC CODING TOOLS (opencode, aider, etc.)
 
-    export OPENAI_API_KEY='your-open-webui-api-key'
-    export OPENAI_API_BASE='https://your-hostname/api'
-    aider --model 'openai/Qwen/Qwen2.5-Coder-7B-Instruct'
+    aider:
+      export OPENAI_API_KEY='your-open-webui-api-key'
+      export OPENAI_API_BASE='https://your-hostname/api'
+      aider --model 'openai/Qwen/Qwen3-8B'
+
+    opencode (https://opencode.ai):
+      Configure ~/.config/opencode/opencode.json with a custom provider pointing
+      to https://your-hostname/api. See the GitHub README for the full config.
 
     SUPPORT
 

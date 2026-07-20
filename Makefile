@@ -29,11 +29,11 @@ deploy: build clean-cdk
 	docker compose run -w /code/cdk --rm devenv cdk deploy \
 	--require-approval never \
 	--parameters AlbCertificateArn=arn:aws:acm:us-east-1:992593896645:certificate/943928d7-bfce-469c-b1bf-11561024580e \
-	--parameters AlbIngressCidr=76.88.34.94/32 \
-	--parameters AsgAmiIdv100=ami-0704c4b3463014b5c \
-	--parameters AsgReprovisionString=20251121.6 \
+	--parameters AlbIngressCidr=0.0.0.0/0 \
+	--parameters AsgAmiIdv110=ami-09e6d53ea122458ab \
+	--parameters AsgReprovisionString=20260709.1 \
 	--parameters AsgInstanceType=g6.xlarge \
-	--parameters Model=Qwen/Qwen2.5-Coder-7B-Instruct \
+	--parameters Model=Qwen/Qwen3-8B \
 	--parameters DnsHostname=open-webui-${USER}.dev.patterns.ordinaryexperts.com \
 	--parameters DnsRoute53HostedZoneName=dev.patterns.ordinaryexperts.com \
 	--parameters CustomVllmConfigParameterArn=arn:aws:ssm:us-east-1:992593896645:parameter/oe-patterns/open-webui/${USER}/vllm-config \
