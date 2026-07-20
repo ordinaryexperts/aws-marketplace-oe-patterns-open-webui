@@ -10,6 +10,10 @@ This pattern deploys Open WebUI with vLLM on AWS infrastructure, providing:
 - OpenAI-compatible API for third-party tool integration
 - Support for Qwen, Microsoft Phi, NVIDIA Nemotron, and Zhipu GLM models
 
+## Demo
+
+Watch a walkthrough of this pattern on YouTube: https://youtu.be/GLUVZANrQbc
+
 ## Architecture
 
 - **Frontend**: Open WebUI web interface

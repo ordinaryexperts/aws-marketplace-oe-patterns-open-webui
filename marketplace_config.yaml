@@ -33,7 +33,7 @@ security_groups:
       - "0.0.0.0/0"
 
 # CloudFormation delivery option details
-architecture_diagram_url: ""
+architecture_diagram_url: "https://ordinary-experts-aws-marketplace-pattern-artifacts.s3.amazonaws.com/open_webui/1.1.0/diagram.png"
 aws_calculator_url: ""
 
 # ============================================================================
@@ -179,6 +179,8 @@ delivery_option:
     Deployment takes 15-60 minutes depending on model size due to model download and loading.
 
   recommended_instance_type: "g6.xlarge"
+
+  architecture_diagram_url: "https://ordinary-experts-aws-marketplace-pattern-artifacts.s3.amazonaws.com/open_webui/1.1.0/diagram.png"
 
   usage_instructions: |
     Full documentation: https://github.com/ordinaryexperts/aws-marketplace-oe-patterns-open-webui
