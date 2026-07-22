@@ -10,7 +10,7 @@ tests:
     parameters:
       AlbCertificateArn: arn:aws:acm:us-east-1:992593896645:certificate/943928d7-bfce-469c-b1bf-11561024580e
       AlbIngressCidr: 0.0.0.0/0
-      AsgAmiIdv110: ami-0665ec9b6b44a0364
+      AsgAmiIdv110: ami-0e7ffc203eee64a02
       AsgInstanceType: g6.xlarge
       Model: Qwen/Qwen3-8B
       DnsHostname: "oe-patterns-open-webui-taskcat-$[taskcat_random-string].dev.patterns.ordinaryexperts.com"

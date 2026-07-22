@@ -27,7 +27,7 @@ else:
     except:
         template_version = "CICD"
 
-AMI_ID="ami-04c3b2c3e90947443" # ordinary-experts-patterns-open-webui-1.1.0-20260717-0907
+AMI_ID="ami-0e7ffc203eee64a02" # ordinary-experts-patterns-open-webui-1.1.0-1-gf77d6cb-20260720-1153
 NEXT_RELEASE_PREFIX="v110"
 
 class OpenWebuiStack(Stack):
